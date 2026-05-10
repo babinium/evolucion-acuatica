@@ -1,0 +1,441 @@
+RESUMEN DEL PROYECTO - EVOLUCION ACUATICA
+
+Fecha del resumen: 2026-05-10
+
+Idea general
+============
+
+El proyecto es un simulador evolutivo acuatico tipo "vista dios".
+El jugador configura el mundo inicial, observa el ecosistema y hace intervenciones puntuales.
+No es un juego de control directo: la gracia es mirar como especies sobreviven, se extinguen, mutan o crean nuevas ramas evolutivas.
+
+El mundo tiene:
+- Productores: seres tipo plantas/algas. Usan luz y nutrientes.
+- Herbivoros: comen productores vivos y alga base.
+- Carnivoros: comen herbivoros y carnivoros de otras especies, y tambien pueden comer carrona.
+
+La cadena principal actual es:
+
+recursos naturales / alga base -> productores -> herbivoros -> carnivoros
+
+
+Tecnologia actual
+=================
+
+La app esta hecha como HTML/CSS/JavaScript simple con canvas.
+No usa Node porque en la maquina no esta instalado.
+Se usa un servidor local Python:
+
+  python3 server.py
+
+URL local:
+
+  http://127.0.0.1:5173
+
+Archivos principales:
+- index.html: estructura de interfaz.
+- styles.css: estilos.
+- app.js: simulacion, render, UI y logica del juego.
+- server.py: servidor local, llamadas a Gemini y Together/Flux.
+- config.local.json: claves API locales. Esta ignorado por git.
+
+La carpeta no es repo git actualmente.
+
+
+APIs de IA
+==========
+
+La IA solo se usa al crear especies, nunca dentro del loop de simulacion.
+
+Gemini:
+- Crea nombres, descripciones, valores y prompts de imagen.
+- Modelo actual en server.py: gemini-2.5-flash-lite.
+
+Together/Flux:
+- Crea imagen detallada y sprite simple.
+- Modelo actual: black-forest-labs/FLUX.1-schnell.
+- Endpoint actual: https://api.together.ai/v1/images/generations
+- Se agrego User-Agent porque sin eso daba 403.
+
+Protecciones contra gasto:
+- El juego pide confirmacion antes de generar mundo con IA.
+- La IA no se llama desde la simulacion.
+- Imagenes por especie: 2 imagenes, retrato y sprite.
+- Si falla una imagen, reintenta hasta 3 veces, esperando 2 segundos desde el cliente.
+- El server tambien reintenta 429 de Together hasta 3 veces con espera.
+- Si despues de 3 intentos una especie no obtiene imagenes, se frena la creacion del mundo y se muestra error.
+
+Errores vistos:
+- Gemini a veces devuelve HTTP 503 por alta demanda.
+- Together tuvo 403 sin User-Agent.
+- Together tuvo 429 por rate limit si se pedian imagenes demasiado rapido.
+
+
+Imagenes de especies
+====================
+
+Cada especie tiene dos imagenes:
+
+1. portraitUrl
+   Imagen detallada para el panel de seleccion.
+   Debe tener fondo blanco, porque se muestra directamente.
+
+2. spriteUrl
+   Imagen simple para gameplay.
+   Debe ser sprite top-down, cuerpo relleno, no solo contorno.
+   Debe tener cabeza/frente mirando hacia la derecha.
+   Debe tener fondo azul croma #0047ff para recortar.
+   Se pide evitar cuerpo azul.
+
+El juego recorta el fondo del sprite con flood-fill desde los bordes.
+Esto evita borrar partes internas del animal.
+Antes se probo blanco y magenta, pero daban problemas.
+
+
+Vista y controles
+=================
+
+El mapa es mas grande que la pantalla.
+Hay camara tipo RTS:
+- Arrastrar mouse: mover camara.
+- WASD/flechas: mover camara.
+- Rueda: zoom.
+
+Si hay una intervencion activa:
+- El mouse muestra un circulo rojo de area afectada.
+- La rueda agranda o achica el radio de intervencion.
+- Click aplica la intervencion.
+
+Seleccion:
+- Click en un individuo selecciona ese individuo.
+- Click en mapa vacio NO deselecciona.
+- El panel queda mostrando el ultimo individuo hasta seleccionar otro.
+- Cuando aparece una nueva especie por mutacion, se autoselecciona el individuo que creo esa especie.
+
+
+Botones principales
+===================
+
+Pantalla inicial:
+- Crear mundo con IA:
+  Gemini crea especies y Flux crea imagenes.
+- IA sin imagenes:
+  Gemini crea especies, pero no se generan imagenes.
+- Demo sin IA:
+  Crea especies locales sin gastar API.
+
+Topbar:
+- Pausa / Seguir
+- Velocidad - / +
+- Crear especie
+- Guardar
+- Cargar
+- Reiniciar
+- Nuevo mundo
+
+Guardar/Cargar:
+- Usa localStorage.
+- Guarda estado completo local del navegador.
+- Puede ser pesado porque las imagenes estan en base64.
+- No crea archivo JSON todavia.
+
+Reiniciar:
+- Reinicia el mundo actual con las mismas especies existentes.
+- No llama a la IA.
+
+Nuevo mundo:
+- Recarga la pagina y vuelve a pantalla inicial.
+- Es la funcion que antes tenia "Reiniciar".
+
+
+Panel Ambiente
+==============
+
+Solo quedan variables con efecto real:
+
+- Temp.
+  Sube metabolismo de animales.
+  Acelera descomposicion de cadaveres.
+
+- Luz
+  Aumenta energia de productores.
+  Ayuda al crecimiento del alga base.
+
+- Oxigeno
+  Ayuda al crecimiento del alga base.
+  Si baja mucho, los individuos pierden salud.
+
+- Nutrientes
+  Aumenta energia de productores.
+  Ayuda al crecimiento del alga base.
+
+- Toxicidad
+  Daña individuos cuando es alta.
+  Reduce crecimiento/vida del alga base.
+
+- Corriente
+  Aumenta levemente velocidad maxima de animales.
+
+- Algas
+  Controla aparicion del alga base por cuadrante.
+
+Variables quitadas por no tener efecto real:
+- Acidez
+- Refugios
+
+Cada variable del panel tiene tooltip explicando su efecto.
+
+
+Alga base
+=========
+
+Los circulos verdes del mapa ahora se llaman "Alga base".
+Ya no muestran texto en el mapa porque era molesto.
+
+Comportamiento:
+- Aparece magicamente.
+- La tasa se controla con el deslizador "Algas".
+- La tasa ya no es global para todo el mapa.
+- El mapa se divide en 4 x 4 = 16 cuadrantes.
+- Cada cuadrante tiene probabilidad por segundo de generar un alga en una posicion aleatoria.
+- Valor inicial del deslizador: 16.
+- Con 16, cada cuadrante tiene 16% por segundo, aprox 2.56 algas por segundo en todo el mapa.
+
+Los herbivoros comen alga base ademas de productores vivos.
+El alga base es menos nutritiva que un productor vivo.
+
+
+Intervenciones actuales
+=======================
+
+Quedan:
+
+- Floracion
+  Crea alga/recursos naturales en el area seleccionada.
+
+- Proteger zona
+  Protege temporalmente a individuos dentro del radio.
+
+- Catastrofe
+  Daña individuos dentro del radio.
+
+- Favorecer especie
+  Crea nuevos individuos de la especie seleccionada cerca del click.
+
+Quitadas:
+- Refugio
+- Abrir zona
+
+Cada boton tiene tooltip del navegador.
+
+
+Rasgos actuales de especie
+==========================
+
+Se eliminaron rasgos sin uso real.
+
+Rasgos actuales:
+
+- Tamano
+  Aumenta tamano visual, salud, vida maxima, reserva/comida al morir.
+  Aumenta coste metabolico.
+  Afecta riesgo en caza y densidad de reproduccion.
+
+- Velocidad
+  Aumenta movimiento y ayuda a cazar/escapar.
+  Aumenta coste metabolico.
+
+- Ataque
+  Solo para carnivoros.
+  Productores y herbivoros tienen ataque 0.
+  Aumenta dano y probabilidad de exito al cazar.
+
+- Defensa
+  Aumenta salud maxima.
+  Ayuda a herbivoros frente a depredadores.
+  Dificulta que productores sean comidos.
+  Afecta combate y dano recibido.
+
+- Percepcion
+  Aumenta rango de vision para buscar comida/presas/carrona.
+  Tambien afecta exploracion de herbivoros.
+
+- Fertilidad
+  Aumenta probabilidad de reproduccion y reduce cooldown.
+  Productores: rango inicial 10-30.
+  Herbivoros/carnivoros: rango inicial 5-20.
+
+- Metabolismo
+  Aumenta consumo de energia.
+
+- Eficiencia alimentaria
+  Mejora energia ganada al comer.
+
+- Toxicidad
+  En productores: dificulta que herbivoros los coman y puede dañarlos.
+  En presas: dificulta la caza y puede dañar al depredador.
+  En color de productores tambien influye visualmente.
+
+Rasgos eliminados:
+- Camuflaje
+- Tolerancia de temperatura
+- Sociabilidad/grupo
+- Agresion
+
+
+Reproduccion
+============
+
+Condiciones generales:
+- Energia > 35.
+- Cooldown reproductivo en 0.
+- No estar bloqueado por densidad/superpoblacion.
+
+La tasa depende de energia:
+
+  energyRatio = energia / 120
+  reproductionChance = tasa base por fertilidad * energyRatio
+
+Si tiene la mitad de energia, reproduce aproximadamente a mitad de tasa.
+
+Al reproducirse:
+- El individuo pierde energia:
+
+  energia *= 0.56
+
+- Entra en cooldown:
+
+  cooldown = max(28, 96 - fertilidad * 3.2)
+
+Densidad/superpoblacion:
+
+Productores:
+- No reproducen si tienen 7 o mas individuos de la misma especie cerca.
+- Radio cercano aumenta con tamano.
+
+Herbivoros:
+- No reproducen si tienen 14 o mas de la misma especie cerca.
+- Ademas, no reproducen si hay mas de 20 de su misma especie en el mismo cuadrante del mapa.
+
+Carnivoros:
+- No reproducen si tienen 9 o mas de la misma especie cerca.
+- Ademas, no reproducen si hay mas de 20 de su misma especie en el mismo cuadrante del mapa.
+
+
+Evolucion y nuevas especies
+===========================
+
+Al reproducirse puede ocurrir una mutacion.
+Si la mutacion acumulada es suficientemente grande, se crea una nueva especie.
+La nueva especie:
+- Hereda datos de la especie madre.
+- Cambia rasgos por mutacion.
+- Se llama con sufijo "var. N".
+- Hereda imagenes de la especie madre por ahora.
+- El individuo padre pasa a ser de la nueva especie.
+- El juego autoselecciona ese individuo para mostrar sus caracteristicas.
+
+Pendiente posible:
+- Que una nueva especie evolutiva pueda pedir imagen IA nueva con confirmacion manual, para no gastar creditos automaticamente.
+
+
+Alimentacion
+============
+
+Productores:
+- Ganan energia por luz y nutrientes.
+- No comen seres vivos.
+
+Herbivoros:
+- Comen productores vivos.
+- Comen alga base.
+- Si no ven comida, eligen un destino aleatorio lejano y exploran antes de volver a mirar.
+- Tienen rango de vision amplio.
+- Si su energia baja de 0, entran en hambre extrema: su rango de vision de comida aumenta progresivamente.
+
+Carnivoros:
+- Comen herbivoros y carnivoros de otras especies.
+- No comen individuos de su misma especie.
+- Pueden comer carrona/cadaveres.
+- Si tienen energia alta, descansan y no cazan.
+- Priorizan presas debiles/heridas/con energia baja.
+- Evitan presas demasiado grandes, defensivas o toxicas.
+- Si matan una presa, ganan energia extra proporcional a tamano/energia de la presa.
+- Si fallan una caza, reciben dano reducido y gastan energia.
+- Si su energia baja de 0, su rango de vision para presas/carrona aumenta.
+
+Cadaveres:
+- Se crean cuando muere un animal no productor.
+- Los carnivoros pueden comerlos.
+- Se descomponen mas rapido con temperatura alta.
+
+
+Muerte
+======
+
+Un individuo puede morir por:
+- Hambre: energia baja, especialmente negativa.
+- Salud <= 0.
+- Ambiente: oxigeno muy bajo o toxicidad alta.
+- Edad avanzada.
+- Combate/caza.
+
+Cuando energia baja de 0:
+- Empieza a dañar salud.
+- Pero tambien aumenta rango de vision para comida/presas como desesperacion.
+
+
+Creacion manual de especies
+===========================
+
+Boton "Crear especie".
+Nombre default: "Pez".
+
+El jugador puede elegir:
+- Nombre.
+- Clase: productor/herbivoro/carnivoro.
+- Descripcion.
+- Valores de rasgos.
+
+Si se crea con imagenes IA:
+- La IA solo crea imagenes.
+- Los valores los pone el jugador.
+
+Si se crea sin IA:
+- Se usa sin imagenes y cae al dibujo procedural si no hay sprite.
+
+Rangos de fertilidad en editor:
+- Productor: 10-30.
+- Herbivoro/carnivoro: 5-20.
+
+
+Notas de implementacion importantes
+===================================
+
+No usar las claves API en frontend si algun dia se sube a internet.
+Ahora estan en config.local.json porque solo se prueba localmente.
+
+La generacion de imagenes guarda data:image base64 para que las especies mantengan la misma imagen.
+
+El juego puede cargar partidas guardadas con rasgos viejos, pero el codigo actual ya no muestra rasgos eliminados porque traitKeys fue reducido.
+
+Si se modifica la estructura de state, revisar guardar/cargar porque usa Object.assign(state, JSON.parse(saved)).
+
+No hay build system.
+No hay dependencias externas.
+
+
+Pendientes / ideas proximas
+===========================
+
+- Agregar exportar/importar partida como JSON.
+- Agregar reintentos automaticos para Gemini 503.
+- Agregar panel de especies global con poblaciones por especie.
+- Agregar historico/graficos de poblacion.
+- Agregar creacion de imagenes IA manual para nuevas especies evolutivas.
+- Mejorar balance de herbivoros/carnivoros tras varios ciclos.
+- Hacer que temperatura interactue con tolerancia no existe porque ese rasgo fue eliminado; si se reintroduce, debe tener efecto real.
+- Tal vez hacer una grilla espacial para optimizar busquedas si hay muchos individuos.
+- Mejorar sprites generados si Flux sigue produciendo contornos: se podria probar otro modelo o generar sprites proceduralmente.
+- Guardar configuracion inicial del mundo para reinicios mas exactos.
+

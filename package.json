@@ -1,0 +1,9 @@
+{
+  "name": "evolucion-acuatica",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "python3 server.py"
+  }
+}

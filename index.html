@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Evolucion acuatica</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="world"></canvas>
+
+      <section id="setup" class="setup">
+        <div class="setup-panel">
+          <p class="eyebrow">Simulador evolutivo</p>
+          <h1>Evolucion acuatica</h1>
+          <div class="setup-grid">
+            <label>Productores <input id="setupProducers" type="number" min="1" max="8" value="3" /></label>
+            <label>Herbivoros <input id="setupHerbivores" type="number" min="1" max="8" value="4" /></label>
+            <label>Carnivoros <input id="setupCarnivores" type="number" min="0" max="8" value="3" /></label>
+            <label>Tamano del mundo
+              <select id="setupSize">
+                <option value="3600">Mediano</option>
+                <option value="5200">Grande</option>
+                <option value="7200">Enorme</option>
+              </select>
+            </label>
+            <label>Variacion natural
+              <select id="setupChaos">
+                <option value="0.55">Media</option>
+                <option value="0.25">Suave</option>
+                <option value="0.95">Alta</option>
+              </select>
+            </label>
+            <label>Velocidad evolutiva
+              <select id="setupMutation">
+                <option value="0.09">Normal</option>
+                <option value="0.04">Lenta</option>
+                <option value="0.16">Rapida</option>
+              </select>
+            </label>
+          </div>
+          <div class="cost-note">
+            La IA solo se llama al crear especies. La simulacion nunca llama APIs en segundo plano.
+          </div>
+          <div id="errorLog" class="error-log hidden"></div>
+          <div class="setup-actions">
+            <button id="startAI" class="primary">Crear mundo con IA</button>
+            <button id="startAIText">IA sin imagenes</button>
+            <button id="startDemo">Demo sin IA</button>
+          </div>
+          <div id="setupStatus" class="status"></div>
+        </div>
+      </section>
+
+      <aside class="topbar">
+        <button id="pauseBtn" title="Pausar/reanudar">Pausa</button>
+        <button id="speedDown" title="Bajar velocidad">-</button>
+        <span id="speedLabel">1.0x</span>
+        <button id="speedUp" title="Subir velocidad">+</button>
+        <button id="newSpeciesBtn">Crear especie</button>
+        <button id="saveBtn">Guardar</button>
+        <button id="loadBtn">Cargar</button>
+        <button id="resetBtn">Reiniciar</button>
+        <button id="newWorldBtn">Nuevo mundo</button>
+      </aside>
+
+      <aside class="left-panel panel">
+        <h2>Ambiente</h2>
+        <div id="envControls"></div>
+        <h2>Intervenciones</h2>
+        <div class="tool-grid">
+          <button data-tool="nutrientBloom" title="Crea una floracion de nutrientes y comida natural en el area.">Floracion</button>
+          <button data-tool="protect" title="Protege temporalmente a los individuos dentro del area.">Proteger zona</button>
+          <button data-tool="disaster" title="Daña a los individuos dentro del area para probar resiliencia.">Catastrofe</button>
+          <button data-tool="favor" title="Crea nuevos individuos de la especie seleccionada cerca del click.">Favorecer especie</button>
+        </div>
+        <p id="toolHint" class="hint">Arrastra o usa WASD para mover la camara. Rueda para zoom. Click para seleccionar.</p>
+      </aside>
+
+      <aside class="right-panel panel">
+        <div id="selectionEmpty">
+          <h2>Seleccion</h2>
+          <p class="hint">Selecciona un individuo para ver sus rasgos, estado, especie e imagen.</p>
+        </div>
+        <div id="selectionPanel" class="hidden"></div>
+      </aside>
+
+      <aside class="bottom-panel panel">
+        <div class="stat"><span>Dia</span><b id="dayStat">0</b></div>
+        <div class="stat"><span>Individuos</span><b id="popStat">0</b></div>
+        <div class="stat"><span>Especies</span><b id="speciesStat">0</b></div>
+        <div class="stat"><span>Extintas</span><b id="extinctStat">0</b></div>
+        <div class="stat wide"><span>Evento</span><b id="eventStat">Esperando inicio</b></div>
+      </aside>
+
+      <div id="modal" class="modal hidden">
+        <div class="modal-panel">
+          <button id="closeModal" class="close">x</button>
+          <h2>Crear especie</h2>
+          <div class="manual-grid">
+            <label>Nombre <input id="manualName" value="Pez" /></label>
+            <label>Clase
+              <select id="manualClass">
+                <option value="producer">Productor</option>
+                <option value="herbivore">Herbivoro</option>
+                <option value="carnivore">Carnivoro</option>
+              </select>
+            </label>
+            <label class="full">Descripcion <textarea id="manualDesc">Criatura acuatica roja, alargada, agresiva, con dientes visibles y aletas rapidas.</textarea></label>
+          </div>
+          <div id="manualTraits" class="trait-editor"></div>
+          <div class="setup-actions">
+            <button id="manualImages" class="primary">Crear con imagenes IA</button>
+            <button id="manualNoImages">Crear sin IA</button>
+          </div>
+          <div id="manualStatus" class="status"></div>
+        </div>
+      </div>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
