@@ -508,7 +508,7 @@ function updateCreatures(dt) {
     c.health = clamp(c.health, 0, c.maxHealth);
 
     if (sp.class === "producer") producerThink(c, sp, dt);
-    else animalThink(c, sp, dt);
+    else animalThink(c, sp, dt, livingClassCounts);
 
     c.x = clamp(c.x + c.vx * dt * 58, 8, state.worldSize - 8);
     c.y = clamp(c.y + c.vy * dt * 58, 8, state.worldSize - 8);
@@ -609,16 +609,8 @@ function countLivingClasses() {
 }
 
 function reproductionPopulationBalance(species, classCounts) {
-  if (species.class === "herbivore") return herbivoreReproductionBalance(classCounts);
   if (species.class === "carnivore") return carnivoreReproductionBalance(classCounts);
   return 1;
-}
-
-function herbivoreReproductionBalance(classCounts) {
-  const producers = classCounts.producer;
-  const herbivores = classCounts.herbivore;
-  if (producers <= 0) return 0;
-  return clamp(1 - herbivores / (producers * 2), 0, 1);
 }
 
 function carnivoreReproductionBalance(classCounts) {
@@ -636,7 +628,7 @@ function producerThink(c, sp, dt) {
   c.energy = clamp(c.energy, 0, 120);
 }
 
-function animalThink(c, sp, dt) {
+function animalThink(c, sp, dt, livingClassCounts) {
   const t = sp.traits;
   let nearestThreat = null;
   let threatD = 99999;
@@ -654,7 +646,7 @@ function animalThink(c, sp, dt) {
     return;
   }
 
-  if (sp.class === "herbivore") eatProducer(c, sp, dt);
+  if (sp.class === "herbivore") eatProducer(c, sp, dt, livingClassCounts);
   if (sp.class === "carnivore") hunt(c, sp, dt);
 
   if (sp.class !== "carnivore" || c.state !== "persiguiendo") {
@@ -670,18 +662,21 @@ function animalThink(c, sp, dt) {
   if (len > max) { c.vx = (c.vx / len) * max; c.vy = (c.vy / len) * max; }
 }
 
-function eatProducer(c, sp, dt) {
+function eatProducer(c, sp, dt, classCounts) {
   let best = null;
   let bestD = 99999;
   let bestType = null;
   const hungry = c.energy < 82;
   const searchRadius = foodVisionRadius(c, sp, 520, 135);
+  const preferAlgae = classCounts.herbivore > classCounts.producer;
+  const producerBias = preferAlgae ? 220 : -120;
+  const algaeBias = preferAlgae ? -150 : 160;
   for (const other of state.creatures) {
     const otherSp = getSpecies(other);
     if (!otherSp || otherSp.class !== "producer") continue;
     const d = Math.hypot(c.x - other.x, c.y - other.y);
     const foodValue = other.energy + other.health * 0.35;
-    const score = d - foodValue * 0.08 + otherSp.traits.defense * 8 + otherSp.traits.toxicity * 12;
+    const score = d - foodValue * 0.08 + otherSp.traits.defense * 8 + otherSp.traits.toxicity * 12 + producerBias;
     if (d < searchRadius && score < bestD) {
       best = other;
       bestD = score;
@@ -690,7 +685,7 @@ function eatProducer(c, sp, dt) {
   }
   for (const alga of state.resources) {
     const d = Math.hypot(c.x - alga.x, c.y - alga.y);
-    const score = d - alga.amount * 0.18;
+    const score = d - alga.amount * 0.18 + algaeBias;
     if (d < searchRadius && score < bestD) {
       best = alga;
       bestD = score;
