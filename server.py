@@ -202,7 +202,7 @@ def generate_image_with_retry(prompt, mode):
             return generate_image(prompt, mode)
         except RuntimeError as error:
             last_error = error
-            if "HTTP 429" not in str(error):
+            if not any(code in str(error) for code in ("HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504")):
                 raise
     raise last_error
 

@@ -161,6 +161,21 @@ async function generateImage(prompt, mode) {
   return data.data?.[0]?.url || "";
 }
 
+async function generateImageWithRetry(prompt, mode) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, 8000 * (attempt - 1)));
+      return await generateImage(prompt, mode);
+    } catch (error) {
+      lastError = error;
+      const message = String(error.message || error);
+      if (!["429", "500", "502", "503", "504"].some((code) => message.includes(code))) throw error;
+    }
+  }
+  throw lastError;
+}
+
 async function handleApi(req, res) {
   try {
     const body = await readBody(req);
@@ -173,7 +188,7 @@ async function handleApi(req, res) {
       const prompts = Array.isArray(body.prompts) ? body.prompts.slice(0, MAX_IMAGES_PER_REQUEST) : [];
       const images = [];
       for (const item of prompts) {
-        images.push(await generateImage(String(item.prompt || ""), item.mode));
+        images.push(await generateImageWithRetry(String(item.prompt || ""), item.mode));
       }
       sendJson(res, 200, { images });
       return;

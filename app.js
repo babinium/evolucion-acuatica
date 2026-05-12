@@ -1376,7 +1376,7 @@ async function createManual(withImages) {
     if (withImages) {
       showBusy("Creando especie", "Generando imagenes IA...");
       status.textContent = "Generando imagenes IA...";
-      await addImagesToSpecies(sp);
+      await addImagesToSpeciesWithRetry(sp, status);
     }
     state.species.push(sp);
     const p = screenToWorld(innerWidth / 2, innerHeight / 2);
