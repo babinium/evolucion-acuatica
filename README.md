@@ -2,7 +2,13 @@
 
 Simulador evolutivo acuatico con vista dios, especies generadas por IA, recursos, productores, herbivoros, carnivoros, mutaciones e intervenciones del jugador.
 
-Este repositorio es publico para que cualquiera pueda descargar el juego y usar sus propias APIs. No es una pagina web ya hospedada: cada jugador lo ejecuta en su computadora para que sus claves privadas no se suban ni se compartan.
+Web demo:
+
+```text
+https://babinium.github.io/evolucion-acuatica/
+```
+
+La web publica permite probar `Demo sin IA`. Para usar Gemini y Together con claves propias, cada jugador debe descargar el proyecto y ejecutarlo localmente. Las claves privadas no deben ponerse en una web publica.
 
 ## Requisitos
 
@@ -11,6 +17,18 @@ Este repositorio es publico para que cualquiera pueda descargar el juego y usar 
 - Una clave de Together AI para crear imagenes con FLUX.
 
 El juego tambien tiene una opcion `Demo sin IA`, que funciona sin claves.
+
+## Jugar online sin APIs
+
+Abre:
+
+```text
+https://babinium.github.io/evolucion-acuatica/
+```
+
+Luego pulsa `Demo sin IA`.
+
+Los botones `Crear mundo con IA` e `IA sin imagenes` necesitan el servidor local porque usan claves privadas.
 
 ## Descargar y jugar
 
