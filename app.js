@@ -1445,7 +1445,7 @@ document.getElementById("resetBtn").addEventListener("click", restartCurrentWorl
 document.getElementById("newWorldBtn").addEventListener("click", () => location.reload());
 
 for (const input of [document.getElementById("setupProducers"), document.getElementById("setupHerbivores"), document.getElementById("setupCarnivores")]) {
-  input.addEventListener("input", () => {
+  input.addEventListener("blur", () => {
     const min = Number(input.min);
     input.value = clamp(Math.round(Number(input.value) || min), min, MAX_INITIAL_SPECIES_PER_TYPE);
   });
