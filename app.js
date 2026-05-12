@@ -72,6 +72,31 @@ function logError(message) {
   box.textContent = box.textContent ? `${box.textContent}\n${line}` : line;
 }
 
+function showBusy(title, message) {
+  document.getElementById("busyTitle").textContent = title;
+  document.getElementById("busyMessage").textContent = message;
+  document.getElementById("busySpinner").classList.remove("hidden");
+  document.getElementById("busyClose").classList.add("hidden");
+  document.getElementById("busyOverlay").classList.remove("hidden", "error");
+}
+
+function updateBusy(message) {
+  document.getElementById("busyMessage").textContent = message;
+}
+
+function showBusyError(title, message) {
+  document.getElementById("busyTitle").textContent = title;
+  document.getElementById("busyMessage").textContent = message;
+  document.getElementById("busySpinner").classList.add("hidden");
+  document.getElementById("busyClose").classList.remove("hidden");
+  document.getElementById("busyOverlay").classList.remove("hidden");
+  document.getElementById("busyOverlay").classList.add("error");
+}
+
+function hideBusy() {
+  document.getElementById("busyOverlay").classList.add("hidden");
+}
+
 async function loadConfigStatus() {
   const statusEl = document.getElementById("setupStatus");
   const helpEl = document.getElementById("configHelp");
@@ -304,11 +329,8 @@ async function startWorld(useAI, withImages = true) {
     return;
   }
 
-  const warning = withImages
-    ? "Esto llamara a Gemini una vez y a Flux dos veces por especie. Continuar?"
-    : "Esto llamara solo a Gemini una vez, sin crear imagenes. Continuar?";
-  if (!confirm(warning)) return;
   try {
+    showBusy("Creando mundo", "Generando especies con Gemini...");
     setupStatus.textContent = "Generando especies con Gemini...";
     state.aiCalls++;
     const response = await fetch("/api/generate-species", {
@@ -322,15 +344,19 @@ async function startWorld(useAI, withImages = true) {
 
     if (withImages) {
       for (let i = 0; i < species.length; i++) {
-        setupStatus.textContent = `Generando imagenes IA ${i + 1}/${species.length}...`;
+        const message = `Generando imagenes IA ${i + 1}/${species.length}...`;
+        setupStatus.textContent = message;
+        updateBusy(message);
         await addImagesToSpeciesWithRetry(species[i], setupStatus);
       }
     }
     localStorage.setItem("evo-last-ai-species", JSON.stringify(species));
+    hideBusy();
     seedWorld(species);
   } catch (error) {
     const message = `Fallo IA: ${error.message}. Vuelve a intentar crear el mundo.`;
     setupStatus.textContent = message;
+    showBusyError("No se pudo crear el mundo", message);
     logError(message);
   }
 }
@@ -359,7 +385,9 @@ async function addImagesToSpeciesWithRetry(species, statusEl) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       if (attempt > 1) {
-        statusEl.textContent = `Reintentando imagenes de ${species.name} (${attempt}/3)...`;
+        const retryMessage = `Reintentando imagenes de ${species.name} (${attempt}/3)...`;
+        statusEl.textContent = retryMessage;
+        updateBusy(retryMessage);
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
       await addImagesToSpecies(species);
@@ -368,6 +396,7 @@ async function addImagesToSpeciesWithRetry(species, statusEl) {
       lastError = error;
       const message = `Intento ${attempt}/3 fallo para ${species.name}: ${error.message}`;
       statusEl.textContent = message;
+      updateBusy(message);
       logError(message);
     }
   }
@@ -1344,8 +1373,8 @@ async function createManual(withImages) {
   const status = document.getElementById("manualStatus");
   try {
     if (withImages) {
-      if (!confirm("Esto llamara a Flux dos veces para esta especie. Continuar?")) return;
-      status.textContent = "Generando imagenes...";
+      showBusy("Creando especie", "Generando imagenes IA...");
+      status.textContent = "Generando imagenes IA...";
       await addImagesToSpecies(sp);
     }
     state.species.push(sp);
@@ -1354,13 +1383,18 @@ async function createManual(withImages) {
     state.lastEvent = `Especie creada: ${sp.name}`;
     document.getElementById("modal").classList.add("hidden");
     status.textContent = "";
+    hideBusy();
   } catch (error) {
-    status.textContent = error.message;
+    const message = `No se pudo crear la especie: ${error.message}`;
+    status.textContent = message;
+    showBusyError("No se pudo crear la especie", message);
+    logError(message);
   }
 }
 
 document.getElementById("newSpeciesBtn").addEventListener("click", () => document.getElementById("modal").classList.remove("hidden"));
 document.getElementById("closeModal").addEventListener("click", () => document.getElementById("modal").classList.add("hidden"));
+document.getElementById("busyClose").addEventListener("click", hideBusy);
 document.getElementById("manualClass").addEventListener("change", buildManualTraits);
 document.getElementById("manualImages").addEventListener("click", () => createManual(true));
 document.getElementById("manualNoImages").addEventListener("click", () => createManual(false));

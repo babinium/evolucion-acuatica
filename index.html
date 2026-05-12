@@ -125,6 +125,15 @@
           <div id="manualStatus" class="status"></div>
         </div>
       </div>
+
+      <div id="busyOverlay" class="busy-overlay hidden" role="status" aria-live="polite">
+        <div class="busy-panel">
+          <div id="busySpinner" class="busy-spinner"></div>
+          <h2 id="busyTitle">Creando mundo</h2>
+          <p id="busyMessage">Preparando IA...</p>
+          <button id="busyClose" class="hidden">Cerrar</button>
+        </div>
+      </div>
     </main>
     <script src="app.js"></script>
   </body>
