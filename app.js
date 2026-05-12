@@ -719,10 +719,11 @@ function hunt(c, sp, dt) {
   }
 
   const hunger = clamp((92 - c.energy) / 92, 0, 1);
-  if (eatCorpse(c, sp, dt, hunger)) return;
 
   let prey = null;
+  let backupPrey = null;
   let bestScore = -99999;
+  let bestBackupScore = -99999;
   const huntRadius = foodVisionRadius(c, sp, 360 + hunger * 340, 58 + hunger * 28);
   for (const other of state.creatures) {
     if (other.id === c.id) continue;
@@ -740,8 +741,15 @@ function hunt(c, sp, dt) {
       - osp.traits.defense * 4.2
       - osp.traits.toxicity * 6
       - sizeRisk;
-    if (score > bestScore) { bestScore = score; prey = other; }
+    if (osp.class === "herbivore") {
+      if (score > bestScore) { bestScore = score; prey = other; }
+    } else if (score > bestBackupScore) {
+      bestBackupScore = score;
+      backupPrey = other;
+    }
   }
+  prey = prey || backupPrey;
+  if (!prey && eatCorpse(c, sp, dt, hunger)) return;
   if (!prey) {
     patrolForFood(c, sp, dt, hunger);
     return;
