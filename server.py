@@ -10,7 +10,8 @@ import time
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.local.json"
-MAX_SPECIES_PER_REQUEST = 18
+MAX_SPECIES_PER_TYPE = 4
+MAX_SPECIES_PER_REQUEST = MAX_SPECIES_PER_TYPE * 3
 MAX_IMAGES_PER_REQUEST = 2
 
 if CONFIG_PATH.exists():
@@ -39,7 +40,7 @@ def config_status():
 
 def clamp_count(value):
     try:
-        return max(0, min(MAX_SPECIES_PER_REQUEST, int(value)))
+        return max(0, min(MAX_SPECIES_PER_TYPE, int(value)))
     except Exception:
         return 0
 

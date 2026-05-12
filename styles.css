@@ -167,6 +167,26 @@ h2 { font-size: 15px; margin-bottom: 10px; }
 .modal { position: fixed; inset: 0; z-index: 6; display: grid; place-items: center; background: rgba(0, 0, 0, 0.58); }
 .modal-panel { position: relative; max-height: calc(100vh - 32px); overflow: auto; }
 .close { position: absolute; right: 14px; top: 14px; width: 34px; padding: 0; }
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.modal-title h2 { margin: 0; }
+#manualSpeciesCounter {
+  border: 1px solid rgba(73, 208, 181, 0.36);
+  color: var(--accent);
+  background: rgba(73, 208, 181, 0.08);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+#manualSpeciesCounter.limit {
+  border-color: rgba(255, 109, 95, 0.5);
+  color: #ffd3cd;
+  background: rgba(255, 109, 95, 0.1);
+}
 .trait-editor { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
 .busy-overlay {
   position: fixed;

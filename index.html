@@ -15,9 +15,9 @@
           <p class="eyebrow">Simulador evolutivo</p>
           <h1>Evolucion acuatica</h1>
           <div class="setup-grid">
-            <label>Productores <input id="setupProducers" type="number" min="1" max="8" value="3" /></label>
-            <label>Herbivoros <input id="setupHerbivores" type="number" min="1" max="8" value="4" /></label>
-            <label>Carnivoros <input id="setupCarnivores" type="number" min="0" max="8" value="3" /></label>
+            <label>Productores <input id="setupProducers" type="number" min="1" max="4" value="3" /></label>
+            <label>Herbivoros <input id="setupHerbivores" type="number" min="1" max="4" value="4" /></label>
+            <label>Carnivoros <input id="setupCarnivores" type="number" min="0" max="4" value="3" /></label>
             <label>Tamano del mundo
               <select id="setupSize">
                 <option value="3600">Mediano</option>
@@ -104,7 +104,10 @@
       <div id="modal" class="modal hidden">
         <div class="modal-panel">
           <button id="closeModal" class="close">x</button>
-          <h2>Crear especie</h2>
+          <div class="modal-title">
+            <h2>Crear especie</h2>
+            <span id="manualSpeciesCounter">0/4</span>
+          </div>
           <div class="manual-grid">
             <label>Nombre <input id="manualName" value="Pez" /></label>
             <label>Clase

@@ -6,6 +6,9 @@ const traitKeys = [
   "metabolism", "foodEfficiency", "toxicity"
 ];
 
+const MAX_INITIAL_SPECIES_PER_TYPE = 4;
+const MAX_MANUAL_SPECIES_PER_WORLD = 4;
+
 const traitLabels = {
   size: "Tamano",
   speed: "Velocidad",
@@ -51,6 +54,7 @@ const state = {
   extinct: 0,
   nextSpeciesId: 1,
   nextCreatureId: 1,
+  manualSpeciesCreated: 0,
   lastEvent: "Esperando inicio",
   aiCalls: 0
 };
@@ -136,6 +140,12 @@ const keys = new Set();
 function rand(min, max) { return min + Math.random() * (max - min); }
 function irand(min, max) { return Math.floor(rand(min, max + 1)); }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+function clampIntegerInput(id, min, max) {
+  const input = document.getElementById(id);
+  const value = clamp(Math.round(Number(input.value) || min), min, max);
+  input.value = value;
+  return value;
+}
 function pick(items) { return items[Math.floor(Math.random() * items.length)]; }
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 function uid(prefix) { return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`; }
@@ -257,6 +267,7 @@ function seedWorld(speciesList) {
   state.selected = null;
   state.nextCreatureId = 1;
   state.nextSpeciesId = state.species.length + 1;
+  state.manualSpeciesCreated = 0;
   initEnvironment();
 
   for (let i = 0; i < 90; i++) spawnResource(rand(0, state.worldSize), rand(0, state.worldSize), rand(35, 120));
@@ -314,9 +325,9 @@ function spawnCreature(species, x, y, generation) {
 }
 
 async function startWorld(useAI, withImages = true) {
-  const producers = Number(document.getElementById("setupProducers").value);
-  const herbivores = Number(document.getElementById("setupHerbivores").value);
-  const carnivores = Number(document.getElementById("setupCarnivores").value);
+  const producers = clampIntegerInput("setupProducers", 1, MAX_INITIAL_SPECIES_PER_TYPE);
+  const herbivores = clampIntegerInput("setupHerbivores", 1, MAX_INITIAL_SPECIES_PER_TYPE);
+  const carnivores = clampIntegerInput("setupCarnivores", 0, MAX_INITIAL_SPECIES_PER_TYPE);
   state.worldSize = Number(document.getElementById("setupSize").value);
   state.chaos = Number(document.getElementById("setupChaos").value);
   state.mutationRate = Number(document.getElementById("setupMutation").value);
@@ -1392,6 +1403,25 @@ document.getElementById("loadBtn").addEventListener("click", () => {
 document.getElementById("resetBtn").addEventListener("click", restartCurrentWorld);
 document.getElementById("newWorldBtn").addEventListener("click", () => location.reload());
 
+for (const input of [document.getElementById("setupProducers"), document.getElementById("setupHerbivores"), document.getElementById("setupCarnivores")]) {
+  input.addEventListener("input", () => {
+    const min = Number(input.min);
+    input.value = clamp(Math.round(Number(input.value) || min), min, MAX_INITIAL_SPECIES_PER_TYPE);
+  });
+}
+
+function updateManualSpeciesCounter() {
+  const count = clamp(state.manualSpeciesCreated || 0, 0, MAX_MANUAL_SPECIES_PER_WORLD);
+  const counter = document.getElementById("manualSpeciesCounter");
+  const imageButton = document.getElementById("manualImages");
+  const noImageButton = document.getElementById("manualNoImages");
+  counter.textContent = `${count}/${MAX_MANUAL_SPECIES_PER_WORLD}`;
+  const atLimit = count >= MAX_MANUAL_SPECIES_PER_WORLD;
+  imageButton.disabled = atLimit;
+  noImageButton.disabled = atLimit;
+  counter.classList.toggle("limit", atLimit);
+}
+
 function buildManualTraits() {
   const box = document.getElementById("manualTraits");
   box.innerHTML = "";
@@ -1408,6 +1438,11 @@ function buildManualTraits() {
 }
 
 async function createManual(withImages) {
+  if ((state.manualSpeciesCreated || 0) >= MAX_MANUAL_SPECIES_PER_WORLD) {
+    document.getElementById("manualStatus").textContent = `Limite alcanzado: ${MAX_MANUAL_SPECIES_PER_WORLD}/${MAX_MANUAL_SPECIES_PER_WORLD} especies creadas en este mundo.`;
+    updateManualSpeciesCounter();
+    return;
+  }
   const traits = {};
   const type = document.getElementById("manualClass").value;
   for (const input of document.querySelectorAll("[data-trait]")) {
@@ -1436,6 +1471,8 @@ async function createManual(withImages) {
       await addImagesToSpeciesWithRetry(sp, status);
     }
     state.species.push(sp);
+    state.manualSpeciesCreated = (state.manualSpeciesCreated || 0) + 1;
+    updateManualSpeciesCounter();
     const p = screenToWorld(innerWidth / 2, innerHeight / 2);
     for (let i = 0; i < 18; i++) spawnCreature(sp, p.x + rand(-160, 160), p.y + rand(-160, 160), 1);
     state.lastEvent = `Especie creada: ${sp.name}`;
@@ -1450,7 +1487,10 @@ async function createManual(withImages) {
   }
 }
 
-document.getElementById("newSpeciesBtn").addEventListener("click", () => document.getElementById("modal").classList.remove("hidden"));
+document.getElementById("newSpeciesBtn").addEventListener("click", () => {
+  updateManualSpeciesCounter();
+  document.getElementById("modal").classList.remove("hidden");
+});
 document.getElementById("closeModal").addEventListener("click", () => document.getElementById("modal").classList.add("hidden"));
 document.getElementById("busyClose").addEventListener("click", hideBusy);
 document.getElementById("manualClass").addEventListener("change", buildManualTraits);
@@ -1459,6 +1499,7 @@ document.getElementById("manualNoImages").addEventListener("click", () => create
 
 buildEnvControls();
 buildManualTraits();
+updateManualSpeciesCounter();
 initEnvironment();
 loadConfigStatus();
 requestAnimationFrame(loop);

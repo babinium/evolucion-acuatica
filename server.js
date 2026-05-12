@@ -36,7 +36,8 @@ const mime = {
   ".svg": "image/svg+xml"
 };
 
-const MAX_SPECIES_PER_REQUEST = 18;
+const MAX_SPECIES_PER_TYPE = 4;
+const MAX_SPECIES_PER_REQUEST = MAX_SPECIES_PER_TYPE * 3;
 const MAX_IMAGES_PER_REQUEST = 2;
 
 function sendJson(res, status, body) {
@@ -52,7 +53,7 @@ async function readBody(req) {
 }
 
 function clampCount(value) {
-  return Math.max(0, Math.min(MAX_SPECIES_PER_REQUEST, Number(value) || 0));
+  return Math.max(0, Math.min(MAX_SPECIES_PER_TYPE, Number(value) || 0));
 }
 
 function buildSpeciesPrompt(body) {
