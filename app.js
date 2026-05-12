@@ -707,11 +707,12 @@ function hunt(c, sp, dt) {
     return;
   }
 
-  if (eatCorpse(c, sp, dt)) return;
+  const hunger = clamp((92 - c.energy) / 92, 0, 1);
+  if (eatCorpse(c, sp, dt, hunger)) return;
 
   let prey = null;
   let bestScore = -99999;
-  const huntRadius = foodVisionRadius(c, sp, 170, 22);
+  const huntRadius = foodVisionRadius(c, sp, 360 + hunger * 340, 58 + hunger * 28);
   for (const other of state.creatures) {
     if (other.id === c.id) continue;
     const osp = getSpecies(other);
@@ -724,13 +725,16 @@ function hunt(c, sp, dt) {
     const score = (osp.class === "herbivore" ? 28 : 8)
       + weakness
       + other.energy * 0.32
-      - d * 0.18
+      - d * (0.1 + hunger * 0.08)
       - osp.traits.defense * 4.2
       - osp.traits.toxicity * 6
       - sizeRisk;
     if (score > bestScore) { bestScore = score; prey = other; }
   }
-  if (!prey) { c.state = "patrullando"; return; }
+  if (!prey) {
+    patrolForFood(c, sp, dt, hunger);
+    return;
+  }
   if (dist(c, prey) < c.size + prey.size + 4) {
     const preySp = getSpecies(prey);
     const attack = sp.traits.attack + sp.traits.speed * 0.5 + sp.traits.size * 0.25 + rand(-3, 3);
@@ -752,32 +756,86 @@ function hunt(c, sp, dt) {
     }
   } else {
     c.state = "persiguiendo";
-    steerToward(c, prey, sp.traits.speed);
+    steerToward(c, prey, sp.traits.speed + 1.5 + hunger * 2);
   }
 }
 
-function eatCorpse(c, sp, dt) {
+function eatCorpse(c, sp, dt, hunger = 0) {
   let best = null;
-  let bestD = 99999;
-  const corpseRadius = foodVisionRadius(c, sp, 210, 18);
+  let bestScore = 99999;
+  const corpseRadius = foodVisionRadius(c, sp, 520 + hunger * 520, 72 + hunger * 38);
   for (const corpse of state.corpses) {
     const d = Math.hypot(c.x - corpse.x, c.y - corpse.y);
-    if (d < bestD && d < corpseRadius) {
+    const score = d - corpse.amount * (0.45 + hunger * 0.35);
+    if (score < bestScore && d < corpseRadius) {
       best = corpse;
-      bestD = d;
+      bestScore = score;
     }
   }
   if (!best) return false;
+  const bestD = Math.hypot(c.x - best.x, c.y - best.y);
   if (bestD < c.size + best.radius + 8) {
-    const bite = Math.min(best.amount, dt * (5 + sp.traits.foodEfficiency * 1.2));
+    const bite = Math.min(best.amount, dt * (8 + sp.traits.foodEfficiency * 1.55));
     best.amount -= bite;
-    c.energy = clamp(c.energy + bite * 0.8, 0, 130);
+    c.energy = clamp(c.energy + bite * 1.05, 0, 130);
+    c.health = clamp(c.health + dt * 0.65, 0, c.maxHealth);
     c.state = "carroneando";
+    c.vx *= 0.7;
+    c.vy *= 0.7;
   } else {
-    steerToward(c, best, sp.traits.speed);
+    steerToward(c, best, sp.traits.speed + 2 + hunger * 2.5);
     c.state = "buscando carrona";
   }
   return true;
+}
+
+function patrolForFood(c, sp, dt, hunger) {
+  c.state = hunger > 0.55 ? "rastreando comida" : "patrullando";
+  c.wanderTime -= dt * (1 + hunger);
+  const needsNewTarget = c.wanderTime <= 0
+    || c.wanderX === null
+    || Math.hypot(c.x - c.wanderX, c.y - c.wanderY) < 90;
+  if (needsNewTarget) {
+    const target = nearestFoodScent(c, sp);
+    if (target) {
+      c.wanderX = target.x;
+      c.wanderY = target.y;
+      c.wanderTime = rand(2.5, 5.5);
+    } else {
+      const angle = rand(0, Math.PI * 2);
+      const distance = rand(620, 1300) + sp.traits.perception * 55 + hunger * 520;
+      c.wanderX = clamp(c.x + Math.cos(angle) * distance, 40, state.worldSize - 40);
+      c.wanderY = clamp(c.y + Math.sin(angle) * distance, 40, state.worldSize - 40);
+      c.wanderTime = rand(3.5, 7.0);
+    }
+  }
+  steerToward(c, { x: c.wanderX, y: c.wanderY }, sp.traits.speed + 1.8 + hunger * 2.2);
+}
+
+function nearestFoodScent(c, sp) {
+  let best = null;
+  let bestScore = 99999;
+  const scentRadius = 900 + sp.traits.perception * 95;
+  for (const corpse of state.corpses) {
+    const d = Math.hypot(c.x - corpse.x, c.y - corpse.y);
+    const score = d - corpse.amount * 0.7;
+    if (d < scentRadius && score < bestScore) {
+      best = corpse;
+      bestScore = score;
+    }
+  }
+  for (const other of state.creatures) {
+    if (other.id === c.id || other.speciesId === c.speciesId) continue;
+    const osp = getSpecies(other);
+    if (!osp || osp.class === "producer") continue;
+    const d = dist(c, other);
+    const score = d - (osp.class === "herbivore" ? 160 : 40) - Math.max(0, 90 - other.energy);
+    if (d < scentRadius && score < bestScore) {
+      best = other;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 function foodVisionRadius(creature, species, base, perPerception) {
