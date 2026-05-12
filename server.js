@@ -81,7 +81,7 @@ Return ONLY valid JSON, no markdown. Use this schema:
       "weaknesses": ["Spanish text"],
       "traits": {
         "size": 1-10,
-        "speed": 1-10,
+        "speed": "producers 0-2, herbivores 1-10, carnivores 6-10",
         "attack": 0-10,
         "defense": 0-10,
         "camouflage": 0-10,
@@ -104,6 +104,7 @@ Balance rules:
 - Producers have attack 0, low speed, use nutrients/light, may have toxicity or defense.
 - Herbivores have attack 0, can have defense, speed, camouflage, toxicity.
 - Carnivores can eat herbivores and other carnivores; attack and aggression matter.
+- Carnivores must start fast enough to hunt: speed should be between 6 and 10.
 - Bigger size increases defense/reserves but should imply higher metabolism.
 - High speed, defense, attack, perception, toxicity, or fertility should have tradeoffs.
 - Make species varied, visually memorable, and mechanically fair.

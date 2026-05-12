@@ -214,7 +214,7 @@ function fallbackSpecies(producers, herbivores, carnivores) {
         ? { size: rand(2, 7), speed: 0, attack: 0, defense: rand(1, 7), fertility: rand(10, 30), metabolism: rand(1, 5), foodEfficiency: rand(5, 9), toxicity: rand(0, 5) }
         : type === "herbivore"
           ? { size: rand(2, 7), speed: rand(3, 9), attack: 0, defense: rand(2, 8), fertility: rand(5, 20), metabolism: rand(2, 7), foodEfficiency: rand(3, 9), toxicity: rand(0, 4) }
-          : { size: rand(3, 9), speed: rand(3, 9), attack: rand(4, 10), defense: rand(1, 7), fertility: rand(5, 20), metabolism: rand(4, 10), foodEfficiency: rand(2, 8), toxicity: rand(0, 3) };
+          : { size: rand(3, 9), speed: rand(6, 10), attack: rand(4, 10), defense: rand(1, 7), fertility: rand(5, 20), metabolism: rand(4, 10), foodEfficiency: rand(2, 8), toxicity: rand(0, 3) };
       const traits = {};
       for (const key of traitKeys) {
         const max = traitMax(key, type);
@@ -1164,6 +1164,7 @@ function traitMax(key, speciesClass = "herbivore") {
 }
 
 function traitMin(key, speciesClass = "herbivore") {
+  if (key === "speed" && speciesClass === "carnivore") return 6;
   if (key !== "fertility") return 0;
   return speciesClass === "producer" ? 10 : 5;
 }
@@ -1338,7 +1339,7 @@ function buildManualTraits() {
   const box = document.getElementById("manualTraits");
   box.innerHTML = "";
   const speciesClass = document.getElementById("manualClass")?.value || "herbivore";
-  const defaults = { size: 5, speed: 6, attack: 5, defense: 4, perception: 6, fertility: speciesClass === "producer" ? 18 : 10, metabolism: 6, foodEfficiency: 5, toxicity: 1 };
+  const defaults = { size: 5, speed: speciesClass === "carnivore" ? 8 : 6, attack: 5, defense: 4, perception: 6, fertility: speciesClass === "producer" ? 18 : 10, metabolism: 6, foodEfficiency: 5, toxicity: 1 };
   for (const key of traitKeys) {
     const label = document.createElement("label");
     label.textContent = traitLabels[key];
