@@ -617,7 +617,7 @@ function carnivoreReproductionBalance(classCounts) {
   const herbivores = classCounts.herbivore;
   const carnivores = classCounts.carnivore;
   if (herbivores <= 0) return 0;
-  return clamp(1 - carnivores / herbivores, 0, 1);
+  return clamp(1 - carnivores / (herbivores * 0.5), 0, 1);
 }
 
 function producerThink(c, sp, dt) {
