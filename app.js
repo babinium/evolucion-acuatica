@@ -517,7 +517,7 @@ function updateCreatures(dt) {
     const canReproduce = c.energy > 35
       && c.cooldown <= 0
       && !isCrowdedForReproduction(c, sp);
-    const populationBalance = carnivoreReproductionBalance(sp, livingClassCounts);
+    const populationBalance = reproductionPopulationBalance(sp, livingClassCounts);
     const reproductionChance = dt * (0.009 + t.fertility * 0.0028) * energyRatio * populationBalance;
     if (canReproduce && Math.random() < reproductionChance) {
       c.energy *= 0.56;
@@ -608,8 +608,20 @@ function countLivingClasses() {
   return counts;
 }
 
-function carnivoreReproductionBalance(species, classCounts) {
-  if (species.class !== "carnivore") return 1;
+function reproductionPopulationBalance(species, classCounts) {
+  if (species.class === "herbivore") return herbivoreReproductionBalance(classCounts);
+  if (species.class === "carnivore") return carnivoreReproductionBalance(classCounts);
+  return 1;
+}
+
+function herbivoreReproductionBalance(classCounts) {
+  const producers = classCounts.producer;
+  const herbivores = classCounts.herbivore;
+  if (producers <= 0) return 0;
+  return clamp(1 - herbivores / (producers * 2), 0, 1);
+}
+
+function carnivoreReproductionBalance(classCounts) {
   const herbivores = classCounts.herbivore;
   const carnivores = classCounts.carnivore;
   if (herbivores <= 0) return 0;
