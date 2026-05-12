@@ -723,6 +723,7 @@ function hunt(c, sp, dt) {
   }
 
   const hunger = clamp((92 - c.energy) / 92, 0, 1);
+  if (eatNearbyCorpse(c, sp, dt)) return;
 
   let prey = null;
   let backupPrey = null;
@@ -785,6 +786,21 @@ function hunt(c, sp, dt) {
   }
 }
 
+function eatNearbyCorpse(c, sp, dt) {
+  let best = null;
+  let bestD = 99999;
+  for (const corpse of state.corpses) {
+    const d = Math.hypot(c.x - corpse.x, c.y - corpse.y);
+    if (d < bestD && d < c.size + corpse.radius + 18) {
+      best = corpse;
+      bestD = d;
+    }
+  }
+  if (!best) return false;
+  eatCorpseBite(c, sp, best, dt);
+  return true;
+}
+
 function eatCorpse(c, sp, dt, hunger = 0) {
   let best = null;
   let bestScore = 99999;
@@ -800,18 +816,22 @@ function eatCorpse(c, sp, dt, hunger = 0) {
   if (!best) return false;
   const bestD = Math.hypot(c.x - best.x, c.y - best.y);
   if (bestD < c.size + best.radius + 8) {
-    const bite = Math.min(best.amount, dt * (8 + sp.traits.foodEfficiency * 1.55));
-    best.amount -= bite;
-    c.energy = clamp(c.energy + bite * 1.05, 0, 130);
-    c.health = clamp(c.health + dt * 0.65, 0, c.maxHealth);
-    c.state = "carroneando";
-    c.vx *= 0.7;
-    c.vy *= 0.7;
+    eatCorpseBite(c, sp, best, dt);
   } else {
     steerToward(c, best, sp.traits.speed + 2 + hunger * 2.5);
     c.state = "buscando carrona";
   }
   return true;
+}
+
+function eatCorpseBite(c, sp, corpse, dt) {
+  const bite = Math.min(corpse.amount, dt * (8 + sp.traits.foodEfficiency * 1.55));
+  corpse.amount -= bite;
+  c.energy = clamp(c.energy + bite * 1.05, 0, 130);
+  c.health = clamp(c.health + dt * 0.65, 0, c.maxHealth);
+  c.state = "carroneando";
+  c.vx *= 0.7;
+  c.vy *= 0.7;
 }
 
 function patrolForFood(c, sp, dt, hunger) {
