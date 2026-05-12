@@ -8,7 +8,7 @@ Web demo:
 https://babinium.github.io/evolucion-acuatica/
 ```
 
-La web publica permite probar `Demo sin IA`. Para usar Gemini y Together con claves propias, cada jugador debe descargar el proyecto y ejecutarlo localmente. Las claves privadas no deben ponerse en una web publica.
+La web publica muestra el cliente del juego. Para usar Gemini y Together con claves propias, cada jugador debe descargar el proyecto y ejecutarlo localmente. Las claves privadas no deben ponerse en una web publica.
 
 ## Requisitos
 
@@ -16,17 +16,13 @@ La web publica permite probar `Demo sin IA`. Para usar Gemini y Together con cla
 - Una clave de Gemini para crear especies con texto.
 - Una clave de Together AI para crear imagenes con FLUX.
 
-El juego tambien tiene una opcion `Demo sin IA`, que funciona sin claves.
-
-## Jugar online sin APIs
+## Abrir la web publica
 
 Abre:
 
 ```text
 https://babinium.github.io/evolucion-acuatica/
 ```
-
-Luego pulsa `Demo sin IA`.
 
 Los botones `Crear mundo con IA` e `IA sin imagenes` necesitan el servidor local porque usan claves privadas.
 

@@ -119,11 +119,11 @@ async function loadConfigStatus() {
       statusEl.textContent = "Gemini esta listo. Falta togetherApiKey para crear imagenes IA.";
       return;
     }
-    statusEl.textContent = `Faltan claves en config.local.json: ${status.missing.join(", ")}. Puedes usar Demo sin IA.`;
+    statusEl.textContent = `Faltan claves en config.local.json: ${status.missing.join(", ")}.`;
   } catch (error) {
     aiButton.disabled = true;
     aiTextButton.disabled = true;
-    statusEl.textContent = "Abre el juego desde python3 server.py para usar APIs locales. Puedes probar Demo sin IA.";
+    statusEl.textContent = "Abre el juego desde python3 server.py para usar APIs locales.";
     logError(error.message);
   }
 }
@@ -1307,7 +1307,6 @@ function applyTool(x, y) {
 
 document.getElementById("startAI").addEventListener("click", () => startWorld(true, true));
 document.getElementById("startAIText").addEventListener("click", () => startWorld(true, false));
-document.getElementById("startDemo").addEventListener("click", () => startWorld(false));
 document.getElementById("pauseBtn").addEventListener("click", () => {
   state.paused = !state.paused;
   document.getElementById("pauseBtn").textContent = state.paused ? "Seguir" : "Pausa";
