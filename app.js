@@ -493,6 +493,7 @@ function updateZones(dt) {
 function updateCreatures(dt) {
   const newborns = [];
   const deaths = [];
+  const livingClassCounts = countLivingClasses();
   for (const c of state.creatures) {
     const sp = getSpecies(c);
     if (!sp) continue;
@@ -516,7 +517,8 @@ function updateCreatures(dt) {
     const canReproduce = c.energy > 35
       && c.cooldown <= 0
       && !isCrowdedForReproduction(c, sp);
-    const reproductionChance = dt * (0.009 + t.fertility * 0.0028) * energyRatio;
+    const populationBalance = carnivoreReproductionBalance(sp, livingClassCounts);
+    const reproductionChance = dt * (0.009 + t.fertility * 0.0028) * energyRatio * populationBalance;
     if (canReproduce && Math.random() < reproductionChance) {
       c.energy *= 0.56;
       c.cooldown = Math.max(28, 96 - t.fertility * 3.2);
@@ -592,6 +594,26 @@ function sameSpeciesInQuadrant(creature) {
     if (ox === qx && oy === qy) count++;
   }
   return count;
+}
+
+function countLivingClasses() {
+  const counts = { producer: 0, herbivore: 0, carnivore: 0 };
+  for (const creature of state.creatures) {
+    const sp = getSpecies(creature);
+    if (!sp) continue;
+    if (sp.class === "producer") counts.producer++;
+    if (sp.class === "herbivore") counts.herbivore++;
+    if (sp.class === "carnivore") counts.carnivore++;
+  }
+  return counts;
+}
+
+function carnivoreReproductionBalance(species, classCounts) {
+  if (species.class !== "carnivore") return 1;
+  const herbivores = classCounts.herbivore;
+  const carnivores = classCounts.carnivore;
+  if (herbivores <= 0) return 0;
+  return clamp(1 - carnivores / herbivores, 0, 1);
 }
 
 function producerThink(c, sp, dt) {
