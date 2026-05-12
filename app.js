@@ -623,11 +623,15 @@ function animalThink(c, sp, dt) {
   if (sp.class === "herbivore") eatProducer(c, sp, dt);
   if (sp.class === "carnivore") hunt(c, sp, dt);
 
+  if (sp.class !== "carnivore" || c.state !== "persiguiendo") {
+    c.vx *= 0.992;
+    c.vy *= 0.992;
+  }
   if (Math.random() < dt * 0.55) {
     c.vx += rand(-1, 1) * (0.35 + t.speed * 0.055);
     c.vy += rand(-1, 1) * (0.35 + t.speed * 0.055);
   }
-  const max = 0.35 + t.speed * 0.18 + state.env.currents * 0.002;
+  const max = moveSpeedLimit(sp, c.state);
   const len = Math.hypot(c.vx, c.vy) || 1;
   if (len > max) { c.vx = (c.vx / len) * max; c.vy = (c.vy / len) * max; }
 }
@@ -775,7 +779,9 @@ function hunt(c, sp, dt) {
     }
   } else {
     c.state = "persiguiendo";
-    steerToward(c, prey, sp.traits.speed + 1.5 + hunger * 2);
+    const preySp = getSpecies(prey);
+    const speedAdvantage = Math.max(0, sp.traits.speed - (preySp?.traits.speed || 0));
+    steerToward(c, prey, sp.traits.speed + 3 + hunger * 2.4 + speedAdvantage * 1.2);
   }
 }
 
@@ -868,16 +874,23 @@ function steerToward(c, target, speed) {
   const dx = target.x - c.x;
   const dy = target.y - c.y;
   const len = Math.hypot(dx, dy) || 1;
-  c.vx += (dx / len) * (0.08 + speed * 0.018);
-  c.vy += (dy / len) * (0.08 + speed * 0.018);
+  c.vx += (dx / len) * (0.07 + speed * 0.032);
+  c.vy += (dy / len) * (0.07 + speed * 0.032);
 }
 
 function steerAway(c, target, speed) {
   const dx = c.x - target.x;
   const dy = c.y - target.y;
   const len = Math.hypot(dx, dy) || 1;
-  c.vx += (dx / len) * (0.16 + speed * 0.025);
-  c.vy += (dy / len) * (0.16 + speed * 0.025);
+  c.vx += (dx / len) * (0.11 + speed * 0.022);
+  c.vy += (dy / len) * (0.11 + speed * 0.022);
+}
+
+function moveSpeedLimit(species, actionState) {
+  const t = species.traits;
+  const classBonus = species.class === "carnivore" ? 0.18 : species.class === "herbivore" ? 0.02 : -0.08;
+  const chaseBonus = species.class === "carnivore" && actionState === "persiguiendo" ? 0.34 : 0;
+  return 0.24 + t.speed * 0.245 + classBonus + chaseBonus + state.env.currents * 0.002;
 }
 
 function maybeMutateSpecies(sp, parent) {
