@@ -19,6 +19,24 @@ else:
     CONFIG = {"togetherApiKey": "", "geminiApiKey": ""}
 
 
+def config_status():
+    has_gemini = bool(CONFIG.get("geminiApiKey"))
+    has_together = bool(CONFIG.get("togetherApiKey"))
+    missing = []
+    if not has_gemini:
+        missing.append("geminiApiKey")
+    if not has_together:
+        missing.append("togetherApiKey")
+    return {
+        "configFile": CONFIG_PATH.name,
+        "hasGeminiApiKey": has_gemini,
+        "hasTogetherApiKey": has_together,
+        "missing": missing,
+        "canUseAiText": has_gemini,
+        "canUseAiImages": has_gemini and has_together,
+    }
+
+
 def clamp_count(value):
     try:
         return max(0, min(MAX_SPECIES_PER_REQUEST, int(value)))
@@ -224,6 +242,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/config-status":
+            self._json(200, config_status())
+            return
         rel = "index.html" if parsed.path == "/" else parsed.path.lstrip("/")
         target = (ROOT / rel).resolve()
         if ROOT not in target.parents and target != ROOT:

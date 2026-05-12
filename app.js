@@ -72,6 +72,37 @@ function logError(message) {
   box.textContent = box.textContent ? `${box.textContent}\n${line}` : line;
 }
 
+async function loadConfigStatus() {
+  const statusEl = document.getElementById("setupStatus");
+  const helpEl = document.getElementById("configHelp");
+  const aiButton = document.getElementById("startAI");
+  const aiTextButton = document.getElementById("startAIText");
+  try {
+    const response = await fetch("/api/config-status");
+    const status = await response.json();
+    if (!response.ok) throw new Error(status.error || "No se pudo leer la configuracion.");
+
+    aiButton.disabled = !status.canUseAiImages;
+    aiTextButton.disabled = !status.canUseAiText;
+
+    if (status.canUseAiImages) {
+      statusEl.textContent = "APIs listas: puedes crear mundos con IA e imagenes.";
+      helpEl.classList.add("hidden");
+      return;
+    }
+    if (status.canUseAiText) {
+      statusEl.textContent = "Gemini esta listo. Falta togetherApiKey para crear imagenes IA.";
+      return;
+    }
+    statusEl.textContent = `Faltan claves en config.local.json: ${status.missing.join(", ")}. Puedes usar Demo sin IA.`;
+  } catch (error) {
+    aiButton.disabled = true;
+    aiTextButton.disabled = true;
+    statusEl.textContent = "Abre el juego desde python3 server.py para usar APIs locales. Puedes probar Demo sin IA.";
+    logError(error.message);
+  }
+}
+
 let lastTs = 0;
 let dragging = false;
 let lastMouse = { x: 0, y: 0 };
@@ -1337,4 +1368,5 @@ document.getElementById("manualNoImages").addEventListener("click", () => create
 buildEnvControls();
 buildManualTraits();
 initEnvironment();
+loadConfigStatus();
 requestAnimationFrame(loop);

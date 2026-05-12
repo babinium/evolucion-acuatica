@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "python3 server.py"
+    "start": "python3 server.py",
+    "start:python": "python3 server.py",
+    "start:node": "node server.js"
   }
 }

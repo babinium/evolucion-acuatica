@@ -9,6 +9,22 @@ const config = existsSync(configPath)
   ? JSON.parse(await readFile(configPath, "utf8"))
   : { togetherApiKey: "", geminiApiKey: "" };
 
+function configStatus() {
+  const hasGeminiApiKey = Boolean(config.geminiApiKey);
+  const hasTogetherApiKey = Boolean(config.togetherApiKey);
+  const missing = [];
+  if (!hasGeminiApiKey) missing.push("geminiApiKey");
+  if (!hasTogetherApiKey) missing.push("togetherApiKey");
+  return {
+    configFile: "config.local.json",
+    hasGeminiApiKey,
+    hasTogetherApiKey,
+    missing,
+    canUseAiText: hasGeminiApiKey,
+    canUseAiImages: hasGeminiApiKey && hasTogetherApiKey
+  };
+}
+
 const mime = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -169,6 +185,10 @@ async function handleApi(req, res) {
 
 async function serveStatic(req, res) {
   const url = new URL(req.url, "http://localhost");
+  if (url.pathname === "/api/config-status") {
+    sendJson(res, 200, configStatus());
+    return;
+  }
   const pathname = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
   const target = resolve(join(root, pathname));
   if (!target.startsWith(root) || target.endsWith("config.local.json")) {
