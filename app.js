@@ -8,6 +8,8 @@ const traitKeys = [
 
 const MAX_INITIAL_SPECIES_PER_TYPE = 4;
 const MAX_MANUAL_SPECIES_PER_WORLD = 4;
+const INITIAL_HERBIVORES_PER_SPECIES = 24;
+const INITIAL_CARNIVORES_PER_SPECIES = Math.max(1, Math.round(INITIAL_HERBIVORES_PER_SPECIES / 3));
 
 const traitLabels = {
   size: "Tamano",
@@ -272,7 +274,11 @@ function seedWorld(speciesList) {
 
   for (let i = 0; i < 90; i++) spawnResource(rand(0, state.worldSize), rand(0, state.worldSize), rand(35, 120));
   for (const sp of state.species) {
-    const count = sp.class === "producer" ? 42 : sp.class === "herbivore" ? 24 : 10;
+    const count = sp.class === "producer"
+      ? 42
+      : sp.class === "herbivore"
+        ? INITIAL_HERBIVORES_PER_SPECIES
+        : INITIAL_CARNIVORES_PER_SPECIES;
     for (let i = 0; i < count; i++) spawnCreature(sp, rand(120, state.worldSize - 120), rand(120, state.worldSize - 120), 0);
   }
   recalcSpecies();
@@ -617,7 +623,7 @@ function carnivoreReproductionBalance(classCounts) {
   const herbivores = classCounts.herbivore;
   const carnivores = classCounts.carnivore;
   if (herbivores <= 0) return 0;
-  return clamp(1 - carnivores / (herbivores * 0.5), 0, 1);
+  return clamp(1 - carnivores / (herbivores / 3), 0, 1);
 }
 
 function producerThink(c, sp, dt) {
@@ -1476,7 +1482,8 @@ document.getElementById("newWorldBtn").addEventListener("click", () => location.
 for (const input of [document.getElementById("setupProducers"), document.getElementById("setupHerbivores"), document.getElementById("setupCarnivores")]) {
   input.addEventListener("blur", () => {
     const min = Number(input.min);
-    input.value = clamp(Math.round(Number(input.value) || min), min, MAX_INITIAL_SPECIES_PER_TYPE);
+    const max = Number(input.max);
+    input.value = clamp(Math.round(Number(input.value) || min), min, max);
   });
 }
 
