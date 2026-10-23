@@ -79,6 +79,9 @@ function powerPopulation(radius, type) {
 
 function syncFavorOptions() {
   const options = document.getElementById("favorSpecies");
+  // Periodic UI refreshes must not reset a native popup or its pending choice.
+  // Live species changes are reconciled when focus leaves the selector.
+  if (document.activeElement === options) return;
   const species = state.species.filter(sp => sp.population > 0 && !sp.extinct);
   if (!species.some(sp => sp.id === favorSpeciesId)) {
     favorSpeciesId = species.find(sp => sp.id === state.selected?.speciesId)?.id || species[0]?.id || null;
@@ -90,8 +93,10 @@ function syncFavorOptions() {
       : '<option value="">No hay especies vivas</option>';
     favorOptionsSignature = signature;
   }
-  options.value = favorSpeciesId || "";
-  options.disabled = species.length === 0;
+  const value = favorSpeciesId || "";
+  if (options.value !== value) options.value = value;
+  const disabled = species.length === 0;
+  if (options.disabled !== disabled) options.disabled = disabled;
 }
 
 function setToolRadius(value) {

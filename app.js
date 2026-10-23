@@ -1134,6 +1134,7 @@ document.getElementById("toolRadius").addEventListener("input", event => setTool
 document.querySelectorAll("[data-radius]").forEach(button => button.addEventListener("click", () => setToolRadius(button.dataset.radius)));
 document.getElementById("toolRepeat").addEventListener("change", event => { toolRepeat = event.target.checked; });
 document.getElementById("favorSpecies").addEventListener("change", event => { favorSpeciesId = event.target.value; invalidate(); });
+document.getElementById("favorSpecies").addEventListener("blur", syncFavorOptions);
 document.getElementById("cancelTool").addEventListener("click", () => cancelTool());
 document.getElementById("dockCancelTool").addEventListener("click", () => cancelTool());
 

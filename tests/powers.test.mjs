@@ -110,6 +110,42 @@ test('favor uses an explicit species even without a selected individual, and spa
   assert.equal(game.run(`state.creatures.slice(${before}).every(c => c.speciesId === state.species[1].id && c.x >= 8 && c.y >= 8 && Math.hypot(c.x,c.y) <= 150)`), true);
 });
 
+test('periodic favor refreshes do not rewrite an unchanged native selector', () => {
+  const game=createGame();
+  game.run('seedWorld(fallbackSpecies(1,1,1));selectTool("favor")');
+  const select=game.element('favorSpecies');
+  const writes=[];
+  for(const property of ['value','disabled','innerHTML']) {
+    let current=select[property];
+    Object.defineProperty(select,property,{get(){return current;},set(value){writes.push(property);current=value;}});
+  }
+  game.run('for(let i=0;i<5;i++) updateSpeciesList()');
+  assert.deepEqual(writes,[]);
+});
+
+test('a pending favor choice survives live list changes and commits before casting', () => {
+  const game=createGame();
+  game.run('seedWorld(fallbackSpecies(1,1,1));state.paused=true;selectTool("favor")');
+  const select=game.element('favorSpecies');
+  const target=game.run('state.species[2].id');
+  const originalOptions=select.innerHTML;
+  game.context.document.activeElement=select;
+  // A native popup can highlight an option before its change event commits it.
+  select.value=target;
+  game.run('state.species[1].name="Nombre actualizado";updateSpeciesList()');
+  assert.equal(select.value,target);
+  assert.equal(select.innerHTML,originalOptions);
+  game.listeners.get('favorSpecies:change')({target:select});
+  game.context.document.activeElement=null;
+  game.listeners.get('favorSpecies:blur')();
+  assert.match(select.innerHTML,/Nombre actualizado/);
+  assert.equal(select.value,target);
+  const before=game.run('state.creatures.length');
+  const result=game.run('applyTool(500,500)');
+  assert.equal(result.ok,true);
+  assert.equal(game.run(`state.creatures.slice(${before}).every(c=>c.speciesId===favorSpeciesId&&c.speciesId===state.species[2].id)`),true);
+});
+
 test('resource and population limits give honest feedback without overflowing', () => {
   const game = world();
   game.run('for(let i=0;i<MAX_RESOURCES;i++) spawnResource(1000,1000,40)');
