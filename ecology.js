@@ -553,13 +553,29 @@ function geneticDistance(a, b, type) {
 }
 
 function maybeMutateSpecies(sp, parent, genes = inheritGenes(parent, sp)) {
-  if (state.mutationRate <= 0 || state.species.length >= MAX_EVOLVED_SPECIES || geneticDistance(genes, sp.traits, sp.class) < 0.12) return sp;
+  if (state.mutationRate <= 0 || geneticDistance(genes, sp.traits, sp.class) < 0.12) return sp;
+  const existing=state.species.find(child=>child.parentId===sp.id && !child.extinct && geneticDistance(genes,child.traits,sp.class)<0.06);
+  if (existing) return existing;
+  if (state.species.length >= MAX_EVOLVED_SPECIES && !retireExtinctVariation()) return sp;
+  const depth=((Number(sp.variationDepth)||0)+1)%3, serial=state.nextSpeciesId++;
+  const identity=depth===0 ? localEvolutionIdentity(sp,genes,serial) : null;
   const child = normalizeSpecies({...sp, id: uid("sp"), parentId: sp.id,
-    name: `${sp.name.split(" var.")[0]} var. ${state.nextSpeciesId++}`,
-    description: `Rama de ${sp.name}. Sus rasgos se heredaron con variaciones y se separaron de la población original.`,
+    variationDepth:depth,identityId:sp.identityId,lineageName:identity?.name || sp.lineageName,
+    variationOrdinal:1+state.species.reduce((max,other)=>other.identityId===sp.identityId && other.variationDepth===depth
+      ? Math.max(max,other.variationOrdinal) : max,0),
+    name:identity?.name || sp.name,description:identity?.description || sp.description,
+    visualDescription:identity?.visualDescription || sp.visualDescription,
+    spritePrompt:identity?.visualDescription || sp.spritePrompt,
+    portraitUrl:identity ? "" : sp.portraitUrl,spriteUrl:identity ? "" : sp.spriteUrl,
+    artworkVersion:identity ? 0 : sp.artworkVersion,artworkError:"",evolutionError:"",
+    evolutionSource:identity ? {identityId:sp.identityId,name:sp.lineageName,description:sp.description,
+      visualDescription:sp.visualDescription,traits:{...sp.traits}} : null,
+    evolutionTextStatus:identity ? (state.evolutionAiEnabled ? "pending" : "local") : "none",
+    evolutionImageStatus:identity ? (state.evolutionAiEnabled ? "pending" : "local") : "none",
     traits: genes, generation: parent.generation + 1, color: colorFor(sp.class, genes)});
+  if (depth) child.name=variationName(child);
   state.species.push(child); speciesById.set(child.id, child);
-  state.lastEvent = `Nueva especie: ${child.name}`;
+  state.lastEvent = `${depth ? "Nueva variación" : "Nueva especie"}: ${child.name}`;
   return child;
 }
 

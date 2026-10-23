@@ -16,6 +16,7 @@ const GOOGLE_API = "https://generativelanguage.googleapis.com/v1beta/models/";
 const OPENROUTER_API = "https://openrouter.ai/api/v1/";
 const PROMPTS = JSON.parse(await readFile(join(root,"generation-prompts.json"),"utf8"));
 const SPECIES_SCHEMA = JSON.parse(await readFile(join(root,"species-schema.json"),"utf8"));
+const EVOLUTION_SCHEMA = JSON.parse(await readFile(join(root,"evolution-schema.json"),"utf8"));
 export const generationCache = new GenerationCache(join(root,".ai-cache"));
 
 export function configStatus() {
@@ -303,6 +304,48 @@ function openrouterUsage(data) {
   return Object.fromEntries(['prompt_tokens','completion_tokens','total_tokens','cost'].map(key=>[key,Number.isFinite(usage[key])?usage[key]:null]));
 }
 
+function evolutionInput(body) {
+  const ancestor=body?.ancestor;
+  const traitKeys=SPECIES_SCHEMA.properties.traits.required;
+  if (!['producer','herbivore','carnivore'].includes(body?.class)
+    || typeof body.requestId!=='string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(body.requestId)
+    || !ancestor || ['name','description','visualDescription'].some(k=>typeof ancestor[k]!=='string' || !ancestor[k].trim())
+    || [body.traits,ancestor.traits].some(traits=>!traits || traitKeys.some(k=>!Number.isFinite(traits[k]) || traits[k]<0 || traits[k]>30))) {
+    throw new ApiError('Falta un linaje válido para la nueva especie.',400);
+  }
+  const traits=source=>Object.fromEntries(traitKeys.map(k=>[k,Math.round(source[k]*100)]));
+  return {class:body.class,ancestor:{name:ancestor.name.trim().slice(0,70),description:ancestor.description.trim().slice(0,200),
+    visualDescription:ancestor.visualDescription.trim().slice(0,240),traits:traits(ancestor.traits)},traits:traits(body.traits)};
+}
+
+export async function evolveSpecies(body) {
+  const input=evolutionInput(body), settings=requireProvider();
+  const prompt=PROMPTS.evolution.replace('$LINEAGE',canonicalJson(input));
+  const openrouter=settings.provider==='openrouter';
+  const payload=openrouter ? {model:settings.textModel,messages:[{role:'user',content:prompt}],temperature:0.7,max_tokens:448,
+    response_format:{type:'json_schema',json_schema:{name:'evolved_identity',strict:true,schema:EVOLUTION_SCHEMA}},
+    provider:{sort:'price',allow_fallbacks:false,require_parameters:true}}
+    : {contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7,candidateCount:1,maxOutputTokens:512,
+      responseMimeType:'application/json',...thinkingConfig(settings.textModel)}};
+  const record=await generationCache.getOrCreate('species',{purpose:'evolved-identity',provider:settings.provider,
+    model:settings.textModel,requestId:body.requestId,payload},async()=>{
+    const data=await postJson(openrouter ? OPENROUTER_API+'chat/completions' : `${GOOGLE_API}${encodeURIComponent(settings.textModel)}:generateContent`,payload,
+      openrouter ? {Authorization:`Bearer ${config.openrouterApiKey}`} : {'x-goog-api-key':config.geminiApiKey},settings.providerLabel);
+    const choice=data.choices?.[0];
+    let identity;
+    try {
+      if (openrouter && choice?.finish_reason && choice.finish_reason!=='stop') throw new Error();
+      const text=openrouter ? choice?.message?.content : data.candidates?.[0]?.content?.parts?.filter(p=>!p.thought).map(p=>p.text||'').join('');
+      identity=extractJson(typeof text==='string' ? text : '');
+      if (!identity || Object.keys(identity).length!==3 || EVOLUTION_SCHEMA.required.some(k=>typeof identity[k]!=='string' || !identity[k].trim())) throw new Error();
+      identity=Object.fromEntries([['name',70],['description',180],['visualDescription',240]].map(([k,max])=>[k,identity[k].trim().slice(0,max)]));
+      if (identity.name===input.ancestor.name) throw new Error();
+    } catch {throw new ApiError('La IA no devolvió una identidad nueva válida. Se conserva el dibujo local; no se reenvió la solicitud.',422);}
+    return {value:identity,usage:openrouter ? openrouterUsage(data) : usageOf(data)};
+  });
+  return record.value;
+}
+
 export function buildImagePrompt(prompt) {
   const body=/Species type:\s*producer\.\s*$/i.test(prompt)?PROMPTS.imageProducer:PROMPTS.imageAnimal;
   return PROMPTS.image.replace('$APPEARANCE',prompt).replace('$BODY',body);
@@ -386,6 +429,10 @@ async function handleApi(req, res) {
     }
     if (req.url === "/api/generate-images") {
       sendJson(res, 200, { image: await generateImage(body.prompt) });
+      return;
+    }
+    if (req.url === "/api/evolve-species") {
+      sendJson(res,200,{identity:await evolveSpecies(body)});
       return;
     }
     sendJson(res, 404, { error: "Unknown API route." });

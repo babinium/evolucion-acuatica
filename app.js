@@ -57,6 +57,8 @@ const state = {
   nextSpeciesId: 1,
   nextCreatureId: 1,
   manualSpeciesCreated: 0,
+  evolutionAiEnabled: false,
+  evolutionAiBlocked: "",
   lastEvent: "Esperando inicio",
   aiCalls: 0
 };
@@ -92,6 +94,7 @@ let frameCount = 0;
 let fpsStarted = 0;
 let measuredFps = 0;
 let configState = { canUseAiText: false, canUseAiImages: false };
+let configLoaded = false;
 let worldStarting = false;
 let creatingSpecies = false;
 
@@ -192,6 +195,8 @@ async function loadConfigStatus() {
   document.getElementById("checkAi").disabled = !configState.canUseAiText;
   document.getElementById("apiBadge").textContent = configState.canUseAiText ? "IA configurada" : "Modo local disponible";
   updateManualSpeciesCounter();
+  configLoaded = true;
+  syncEvolutionControls();
 }
 
 async function requestApi(path, body, timeout = 70000) {
@@ -264,6 +269,7 @@ function screenToWorld(x, y) {
 
 function normalizeSpecies(raw = {}) {
   raw = raw && typeof raw === "object" ? raw : {};
+  const id = raw.id || uid("sp");
   const traits = {};
   const rawClass = ["producer", "herbivore", "carnivore"].includes(raw.class) ? raw.class : "herbivore";
   for (const key of traitKeys) {
@@ -279,13 +285,15 @@ function normalizeSpecies(raw = {}) {
   }
   if (rawClass === "herbivore") traits.attack = 0;
   return {
-    id: raw.id || uid("sp"),
+    id,
+    ...lineageFields(raw,id),
     parentId: raw.parentId || null,
     name: String(raw.name || "Especie sin nombre").slice(0, 70),
     class: rawClass,
     description: String(raw.description || "Especie acuática generada localmente.").slice(0, 2000),
     visualDescription: String(raw.visualDescription || "Silueta acuática simple.").slice(0, 2000),
-    diet: String(raw.diet || "Recursos del ecosistema").slice(0, 2000),
+    diet: String(raw.diet || (rawClass==="producer" ? "Luz y nutrientes mediante fotosíntesis."
+      : rawClass==="herbivore" ? "Algas y productores vivos." : "Herbívoros, otros carnívoros y carroña.")).slice(0, 2000),
     habitat: String(raw.habitat || "Aguas medias").slice(0, 2000),
     behavior: String(raw.behavior || "Explora, come y se reproduce.").slice(0, 2000),
     strengths: raw.strengths || [],
@@ -354,6 +362,7 @@ function initEnvironment() {
 }
 
 function seedWorld(speciesList) {
+  resetEvolutionWork();
   state.species = speciesList.map((sp) => normalizeSpecies({ ...sp, extinct: false, population: 0 }));
   rebuildSpeciesIndex();
   spriteCache.clear();
@@ -392,6 +401,7 @@ function seedWorld(speciesList) {
   rebuildSpatialIndexes();
   recalcSpecies();
   state.started = true;
+  syncEvolutionControls();
   document.getElementById("setup").classList.add("hidden");
   document.getElementById("app").classList.add("playing");
   syncPauseButton();
@@ -454,6 +464,7 @@ async function startWorld(useAI, withImages = true) {
   const setupStatus = document.getElementById("setupStatus");
 
   if (!useAI) {
+    state.evolutionAiEnabled=false;state.evolutionAiBlocked="";
     seedWorld(fallbackSpecies(producers, herbivores, carnivores));
     return;
   }
@@ -490,6 +501,7 @@ async function startWorld(useAI, withImages = true) {
       }
     }
     hideBusy();
+    state.evolutionAiEnabled=withImages;state.evolutionAiBlocked="";
     seedWorld(species);
     if (missingImages) state.lastEvent = `Ilustraciones listas: ${species.length-missingImages}/${species.length}. El resto usa dibujos locales; la ficha muestra el motivo.`;
   } catch (error) {
@@ -500,7 +512,7 @@ async function startWorld(useAI, withImages = true) {
   } finally { worldStarting = false; }
 }
 
-async function addSpeciesArtwork(species, statusEl) {
+async function addSpeciesArtwork(species, statusEl, {background=false} = {}) {
   statusEl.textContent = `Creando ilustración de ${species.name}…`;
   state.aiCalls++;
   const data = await requestApi("/api/generate-images", {
@@ -508,7 +520,7 @@ async function addSpeciesArtwork(species, statusEl) {
   }, 105000);
   if (!data.image) throw new Error("La IA no devolvió una ilustración.");
   statusEl.textContent = `Recortando y preparando ${species.name}…`;
-  updateBusy(statusEl.textContent);
+  if (!background) updateBusy(statusEl.textContent);
   // Assign only after both local assets decode and pass the cutout checks.
   // A bad image never triggers a second paid generation from the client.
   const artwork = await prepareSpeciesArtwork(data.image,species.class);
@@ -693,12 +705,14 @@ function drawCreatures() {
   }
 }
 
-function getProceduralSprite(sp) {
-  const cached = proceduralSprites.get(sp.id);
+function getProceduralSprite(sp, resolution=96) {
+  const key=resolution===96 ? sp.id : `${sp.id}:${resolution}`;
+  const cached = proceduralSprites.get(key);
   if (cached) return cached;
   const sprite = document.createElement("canvas");
-  sprite.width = 96; sprite.height = 96;
+  sprite.width = resolution; sprite.height = resolution;
   const c = sprite.getContext("2d");
+  c.scale(resolution/96,resolution/96);
   c.translate(48, 48);
   c.fillStyle = sp.color;
   if (sp.class === "producer") {
@@ -731,7 +745,7 @@ function getProceduralSprite(sp) {
       c.fillStyle = "#fff1cd"; c.beginPath(); c.moveTo(34, 1); c.lineTo(26, 4); c.lineTo(27, 0); c.fill();
     }
   }
-  proceduralSprites.set(sp.id, sprite);
+  proceduralSprites.set(key, sprite);
   return sprite;
 }
 
@@ -823,8 +837,9 @@ function setText(id, value) {
 function updateHud() {
   setText("dayStat", Math.floor(state.day));
   setText("popStat", state.creatures.length);
-  setText("speciesStat", state.species.filter(s => !s.extinct).length);
-  setText("extinctStat", state.extinct);
+  const identities=livingIdentities();
+  setText("speciesStat", identities.size);
+  setText("extinctStat", state.species.filter(sp=>sp.variationDepth===0 && !identities.has(sp.id)).length);
   setText("eventStat", state.lastEvent);
   setText("speedLabel", `${state.speed}x`);
   setText("zoomLabel", `${Math.round(state.camera.zoom * 100)}%`);
@@ -869,7 +884,7 @@ function loop(ts) {
     frameCount = 0;
     fpsStarted = ts;
   }
-  if (ts - lastHudTs >= 250) { updateHud(); lastHudTs = ts; }
+  if (ts - lastHudTs >= 250) { updateHud(); processEvolutionQueue(); lastHudTs = ts; }
   if (ts - lastPanelTs >= 700) {
     if (state.started) { syncEnvControls(); updateSelection(); updateSpeciesList(); }
     lastPanelTs = ts;
@@ -909,6 +924,8 @@ function updateSelection() {
   }
   const sp = getSpecies(c);
   if (!sp) return;
+  const identity = speciesById.get(sp.identityId) || sp;
+  if (identity.evolutionSource && !identity.portraitUrl) ensureLocalEvolutionArtwork(identity);
   empty.classList.add("hidden");
   panel.classList.remove("hidden");
   const key = `${c.id}:${sp.id}`;
@@ -921,6 +938,7 @@ function updateSelection() {
       ${image}
       <div class="selection-heading"><span class="selection-avatar" style="color:${escapeHtml(sp.color)}"><svg><use href="#${sp.class === "producer" ? "i-leaf" : "i-fish"}"/></svg></span><div><span class="species-chip">${className(sp.class)} · Individuo #${c.id}</span><h2>${escapeHtml(sp.name)}</h2></div></div>
       <p class="hint">${escapeHtml(sp.description)}</p>
+      <p class="hint lineage-status">${escapeHtml(evolutionSummary(sp))}</p>
       <div class="detail-grid">${["Estado", "Generación", "Edad", "Energía", "Salud", "Población", "Oxígeno local", "Nutrientes locales", "Cobertura vegetal", "Gasto basal"].map((label, i) => `<div class="detail"><span>${label}</span><b data-selection="${i}"></b></div>`).join("")}</div>
       <p class="hint"><b>Dieta:</b> ${escapeHtml(sp.diet)}</p>
       <p class="hint"><b>Hábitat:</b> ${escapeHtml(sp.habitat)}</p>
@@ -943,10 +961,10 @@ function updateSpeciesList() {
   if (state.activeTool === "favor") syncFavorOptions();
   if (signature === speciesListSignature) return;
   speciesListSignature = signature;
-  setText("speciesCount", state.species.filter(sp => !sp.extinct).length);
+  setText("speciesCount", livingIdentities().size);
   const counts = countLivingClasses();
   document.getElementById("trophicSummary").innerHTML = [["producer", "Productores"], ["herbivore", "Herbívoros"], ["carnivore", "Carnívoros"]].map(([type, label]) => `<span class="${type}"><b>${counts[type]}</b>${label}</span>`).join("");
-  document.getElementById("speciesList").innerHTML = state.species.map((sp, i) => `<button class="species-row ${sp.extinct ? "extinct" : ""} ${state.selected?.speciesId === sp.id ? "active" : ""}" data-species-index="${i}" ${sp.population ? "" : "disabled"} title="Ver ${escapeHtml(sp.name)}"><span class="species-symbol" style="color:${escapeHtml(sp.color)}"><svg><use href="#${sp.class === "producer" ? "i-leaf" : "i-fish"}"/></svg></span><span><strong>${escapeHtml(sp.name)}</strong><small>${sp.extinct ? "Extinta" : className(sp.class)}</small></span><b>${sp.population}</b></button>`).join("");
+  document.getElementById("speciesList").innerHTML = state.species.map((sp, i) => `<button class="species-row ${sp.extinct ? "extinct" : ""} ${state.selected?.speciesId === sp.id ? "active" : ""}" data-species-index="${i}" ${sp.population ? "" : "disabled"} title="Ver ${escapeHtml(sp.name)}"><span class="species-symbol" style="color:${escapeHtml(sp.color)}"><svg><use href="#${sp.class === "producer" ? "i-leaf" : "i-fish"}"/></svg></span><span><strong>${escapeHtml(sp.name)}</strong><small>${sp.extinct ? "Linaje extinto" : className(sp.class)}${sp.variationDepth ? ` · Variación ${sp.variationDepth}/2` : ""}</small></span><b>${sp.population}</b></button>`).join("");
 }
 
 function detail(label, value) {
@@ -1144,12 +1162,17 @@ document.querySelectorAll("[data-radius]").forEach(button => button.addEventList
 document.getElementById("toolRepeat").addEventListener("change", event => { toolRepeat = event.target.checked; });
 document.getElementById("favorSpecies").addEventListener("change", event => { favorSpeciesId = event.target.value; invalidate(); });
 document.getElementById("favorSpecies").addEventListener("blur", syncFavorOptions);
+document.getElementById("evolutionAi").addEventListener("change",event=>{
+  state.evolutionAiEnabled=event.target.checked;
+  if (state.evolutionAiEnabled) state.evolutionAiBlocked="";
+  syncEvolutionControls();processEvolutionQueue();
+});
 document.getElementById("cancelTool").addEventListener("click", () => cancelTool());
 document.getElementById("dockCancelTool").addEventListener("click", () => cancelTool());
 
 function saveWorld() {
   if (!state.started) return;
-  const snapshot = { ...state, selected: null, selectedId: state.selected?.id || null, activeTool: null };
+  const snapshot = packArtwork({ ...state, selected: null, selectedId: state.selected?.id || null, activeTool: null });
   state.lastEvent = remember("evo-save", JSON.stringify(snapshot))
     ? "Partida guardada en este navegador" : "No se pudo guardar: no queda espacio en el navegador.";
   updateHud();
@@ -1164,6 +1187,7 @@ function loadWorld() {
       updateHud(); return;
     }
     const saved = JSON.parse(raw);
+    unpackArtwork(saved);
     if (!saved || !Array.isArray(saved.species) || !Array.isArray(saved.creatures)
       || !Array.isArray(saved.resources) || !saved.camera || !Number.isFinite(saved.worldSize)) {
       throw new Error("La partida no tiene un formato válido.");
@@ -1180,7 +1204,12 @@ function loadWorld() {
     }
     const selectedId = saved.selectedId ?? saved.selected?.id;
     const legacy = saved.ecologyVersion !== ECOLOGY_VERSION;
-    Object.assign(state, saved, { started: true, activeTool: null });
+    resetEvolutionWork();
+    Object.assign(state, saved, { started: true, activeTool: null,
+      evolutionAiEnabled: typeof saved.evolutionAiEnabled==="boolean" ? saved.evolutionAiEnabled
+        : saved.species.some(sp=>sp.artworkVersion===1 && sp.portraitUrl),
+      evolutionAiBlocked: saved.evolutionAiBlocked || "" });
+    migrateLineages();
     setSimulationSpeed(state.speed);
     state.creatures = state.creatures.slice(0, MAX_CREATURES);
     state.resources = state.resources.slice(0, MAX_RESOURCES);
@@ -1196,7 +1225,7 @@ function loadWorld() {
     document.getElementById("setup").classList.add("hidden");
     document.getElementById("app").classList.add("playing");
     state.lastEvent = "Partida cargada";
-    syncPauseButton(); syncEnvControls(); updateSelection(); updateSpeciesList(); updateHud(); invalidate();
+    syncPauseButton(); syncEnvControls(); syncEvolutionControls(); updateSelection(); updateSpeciesList(); updateHud(); invalidate();
   } catch (error) {
     document.getElementById("setupStatus").textContent = `No se pudo cargar: ${error.message}`;
     state.lastEvent = "No se pudo cargar la partida guardada.";
