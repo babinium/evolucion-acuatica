@@ -106,15 +106,18 @@ test('a failed image provider still leaves a playable AI species world', async (
   const calls = [];
   const game = createGame({fetch: async url => {
     calls.push(url);
-    if (url === '/api/config-status') return {ok: true, json: async () => ({missing: [], canUseAiImages: true, canUseAiText: true, hasTogetherApiKey: true})};
+    if (url === '/api/config-status') return {ok: true, json: async () => ({missing: [], canUseAiImages: true, canUseAiText: true})};
     if (url === '/api/generate-species') return {ok: true, json: async () => ({species: [{name: 'Alga', class: 'producer', traits: {}}, {name: 'Pez', class: 'herbivore', traits: {}}]})};
-    return {ok: false, status: 401, json: async () => ({error: 'Together: invalid key'})};
+    return {ok: false, status: 401, json: async () => ({error: 'Google: invalid key'})};
   }});
   await game.run('startWorld(true, true)');
   assert.equal(game.run('state.started'), true);
   assert.ok(game.run('state.creatures.length') > 0);
   assert.equal(calls.filter(url => url === '/api/generate-images').length, 1);
   assert.match(game.run('state.lastEvent'), /dibujos locales/);
+  assert.equal(game.run('state.species.every(sp=>sp.artworkError.includes("invalid key"))'),true);
+  game.run('state.selected=state.creatures[0]; updateSelection()');
+  assert.match(game.element('selectionPanel').innerHTML,/Ilustración no disponible: Google: invalid key/);
 });
 
 test('keyboard movement works after focusing the pause button', () => {

@@ -91,7 +91,7 @@ let renderDirty = true;
 let frameCount = 0;
 let fpsStarted = 0;
 let measuredFps = 0;
-let configState = { canUseAiText: false, canUseAiImages: false, hasTogetherApiKey: false };
+let configState = { canUseAiText: false, canUseAiImages: false };
 let worldStarting = false;
 let creatingSpecies = false;
 
@@ -182,15 +182,14 @@ async function loadConfigStatus() {
     if (!response.ok) throw new Error(status.error || "Configuración no disponible");
     configState = status;
     statusEl.textContent = status.canUseAiImages
-      ? "Gemini y Together configurados. Su disponibilidad se comprueba al generar."
-      : status.canUseAiText
-        ? "Gemini configurado. Podés crear especies con dibujos locales."
-        : "Listo para jugar sin claves. La IA es opcional.";
+      ? "Google configurado para especies e imágenes. Podés comprobar la conexión antes de generar."
+      : "Listo para jugar sin claves. Agregá una clave de Google para crear especies e imágenes.";
   } catch {
     statusEl.textContent = "Listo para jugar sin conexión. La IA necesita el servidor local.";
   }
   document.getElementById("startAI").disabled = !configState.canUseAiImages;
   document.getElementById("startAIText").disabled = !configState.canUseAiText;
+  document.getElementById("checkGoogle").disabled = !configState.canUseAiText;
   document.getElementById("apiBadge").textContent = configState.canUseAiText ? "IA configurada" : "Modo local disponible";
   updateManualSpeciesCounter();
 }
@@ -292,10 +291,11 @@ function normalizeSpecies(raw = {}) {
     strengths: raw.strengths || [],
     weaknesses: raw.weaknesses || [],
     traits,
-    portraitPrompt: raw.portraitPrompt || `Detailed scientific illustration of ${raw.visualDescription || raw.name}, aquatic creature, white background, centered, no text.`,
-    spritePrompt: raw.spritePrompt || `Simple filled top-down game sprite of ${raw.visualDescription || raw.name}, solid chroma blue background, centered, no text, filled colored body, not line art.`,
+    spritePrompt: raw.spritePrompt || `An original aquatic species: ${raw.visualDescription || raw.name}. Opaque filled body, readable dorsal silhouette, head right.`,
     portraitUrl: raw.portraitUrl || "",
     spriteUrl: raw.spriteUrl || "",
+    artworkVersion: raw.artworkVersion === 1 ? 1 : 0,
+    artworkError: String(raw.artworkError || "").slice(0, 800),
     color: raw.color || colorFor(rawClass, traits),
     population: 0,
     extinct: false,
@@ -475,18 +475,22 @@ async function startWorld(useAI, withImages = true) {
         const message = `Generando imagenes IA ${i + 1}/${species.length}...`;
         setupStatus.textContent = message;
         updateBusy(message);
-        try { await addImagesToSpeciesWithRetry(species[i], setupStatus); }
+        try { await addSpeciesArtwork(species[i], setupStatus); }
         catch (error) {
           missingImages++;
+          species[i].artworkError = error.message;
           logError(`Imágenes de ${species[i].name}: ${error.message}. Se usará un dibujo local.`);
           // Permanent errors affect every following species; avoid more paid requests.
-          if (![429, 500, 502, 503, 504].includes(error.status)) { missingImages += species.length - i - 1; break; }
+          if ([400, 401, 403, 404, 429, 500, 502, 503, 504].includes(error.status)) {
+            for (const remaining of species.slice(i+1)) remaining.artworkError = error.message;
+            missingImages += species.length - i - 1; break;
+          }
         }
       }
     }
     hideBusy();
     seedWorld(species);
-    if (missingImages) state.lastEvent = "Mundo listo. Algunas especies usan dibujos locales porque falló la IA de imágenes.";
+    if (missingImages) state.lastEvent = `Ilustraciones listas: ${species.length-missingImages}/${species.length}. El resto usa dibujos locales; la ficha muestra el motivo.`;
   } catch (error) {
     const message = `Fallo IA: ${error.message}. Vuelve a intentar crear el mundo.`;
     setupStatus.textContent = message;
@@ -495,23 +499,19 @@ async function startWorld(useAI, withImages = true) {
   } finally { worldStarting = false; }
 }
 
-async function addImagesToSpecies(species) {
+async function addSpeciesArtwork(species, statusEl) {
+  statusEl.textContent = `Creando ilustración de ${species.name}…`;
   state.aiCalls++;
   const data = await requestApi("/api/generate-images", {
-    prompts: [
-      { mode: "portrait", prompt: `${species.portraitPrompt}. Clean white background, isolated subject, no text, no watermark.` },
-      { mode: "sprite", prompt: `${species.spritePrompt}. Filled 2D game sprite, head facing right, tail left, solid chroma blue background (#0047ff), avoid blue creature colors, no text.` }
-    ]
-  }, 400000);
-  species.portraitUrl = data.images?.[0] || "";
-  species.spriteUrl = data.images?.[1] || "";
-  if (!species.portraitUrl || !species.spriteUrl) throw new Error("La API no devolvio ambas imagenes.");
-}
-
-async function addImagesToSpeciesWithRetry(species, statusEl) {
-  statusEl.textContent = `Creando imágenes de ${species.name}…`;
-  // The server owns retries so a failed portrait never regenerates the paid pair.
-  await addImagesToSpecies(species);
+    prompt: `${species.name}. ${species.visualDescription}. ${species.spritePrompt}. Species type: ${species.class}.`
+  }, 290000);
+  if (!data.image) throw new Error("Google no devolvió una ilustración.");
+  statusEl.textContent = `Recortando y preparando ${species.name}…`;
+  updateBusy(statusEl.textContent);
+  // Assign only after both local assets decode and pass the cutout checks.
+  // A bad image never triggers a second paid generation from the client.
+  const artwork = await prepareSpeciesArtwork(data.image);
+  Object.assign(species, artwork, { artworkVersion: 1, artworkError: "" });
 }
 
 function getSpecies(creature) {
@@ -736,13 +736,19 @@ function getProceduralSprite(sp) {
 
 function getSprite(species) {
   if (!species.spriteUrl) return null;
-  if (spriteCache.has(species.id)) return spriteCache.get(species.id);
+  // Descendant species reuse the same image and its prepared canvas.
+  const key = species.spriteUrl;
+  if (spriteCache.has(key)) return spriteCache.get(key);
   const entry = { ready: false, canvas: null };
-  spriteCache.set(species.id, entry);
+  spriteCache.set(key, entry);
   const img = new Image();
   img.onload = () => {
     try {
-      entry.canvas = removeSpriteBackground(img);
+      if (species.artworkVersion === 1) {
+        entry.canvas = document.createElement("canvas");
+        entry.canvas.width = 192; entry.canvas.height = 192;
+        entry.canvas.getContext("2d").drawImage(img, 0, 0, 192, 192);
+      } else entry.canvas = removeSpriteBackground(img);
       entry.ready = true;
     } catch { entry.ready = false; }
     invalidate();
@@ -753,77 +759,48 @@ function getSprite(species) {
   return entry;
 }
 
-function removeSpriteBackground(img) {
-  const size = 192;
+function cutoutImage(img) {
+  const width=img.naturalWidth||img.width, height=img.naturalHeight||img.height;
+  if(!width||!height||width>4096||height>4096) throw new Error("La ilustración tiene dimensiones inválidas.");
+  const scale=Math.min(1,512/Math.max(width,height));
+  const source=document.createElement("canvas");
+  source.width=Math.max(8,Math.round(width*scale));source.height=Math.max(8,Math.round(height*scale));
+  const context=source.getContext("2d",{willReadFrequently:true});
+  context.drawImage(img,0,0,source.width,source.height);
+  const image=context.getImageData(0,0,source.width,source.height);
+  const result=SpriteTools.cutout(image.data,source.width,source.height);
+  image.data.set(result.data);context.putImageData(image,0,0);
+  return {source,...result};
+}
+
+function fittedArtwork(cutout,size) {
   const out = document.createElement("canvas");
-  out.width = size;
-  out.height = size;
-  const c = out.getContext("2d");
-  c.drawImage(img, 0, 0, size, size);
-  const image = c.getImageData(0, 0, size, size);
-  const data = image.data;
-  const bg = estimateBackgroundColor(data, size);
-  removeConnectedBackground(data, size, bg);
-  c.putImageData(image, 0, 0);
+  out.width=size;out.height=size;
+  const target=SpriteTools.fit(cutout.bounds,size);
+  const b=cutout.bounds;
+  out.getContext("2d").drawImage(cutout.source,b.x,b.y,b.width,b.height,target.x,target.y,target.width,target.height);
   return out;
 }
 
-function removeConnectedBackground(data, size, bg) {
-  const seen = new Uint8Array(size * size);
-  const queue = [];
-  const push = (x, y) => {
-    if (x < 0 || y < 0 || x >= size || y >= size) return;
-    const p = y * size + x;
-    if (seen[p]) return;
-    const i = p * 4;
-    const dBg = Math.hypot(data[i] - bg.r, data[i + 1] - bg.g, data[i + 2] - bg.b);
-    const dBlue = Math.hypot(data[i] - 0, data[i + 1] - 71, data[i + 2] - 255);
-    const dMagenta = Math.hypot(data[i] - 255, data[i + 1] - 0, data[i + 2] - 255);
-    if (dBg < 96 || dBlue < 120 || dMagenta < 110) {
-      seen[p] = 1;
-      queue.push([x, y]);
-    }
-  };
-  for (let x = 0; x < size; x++) {
-    push(x, 0);
-    push(x, size - 1);
-  }
-  for (let y = 0; y < size; y++) {
-    push(0, y);
-    push(size - 1, y);
-  }
-  while (queue.length) {
-    const [x, y] = queue.pop();
-    const i = (y * size + x) * 4;
-    data[i + 3] = 0;
-    push(x + 1, y);
-    push(x - 1, y);
-    push(x, y + 1);
-    push(x, y - 1);
-  }
+function removeSpriteBackground(img) {
+  return fittedArtwork(cutoutImage(img),192);
 }
 
-function estimateBackgroundColor(data, size) {
-  const samples = [];
-  const points = [
-    [3, 3], [size - 4, 3], [3, size - 4], [size - 4, size - 4],
-    [Math.floor(size / 2), 3], [Math.floor(size / 2), size - 4],
-    [3, Math.floor(size / 2)], [size - 4, Math.floor(size / 2)]
-  ];
-  for (const [x, y] of points) {
-    const i = (y * size + x) * 4;
-    samples.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
+async function prepareSpeciesArtwork(url) {
+  if(!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i.test(url)||url.length>12*1024*1024) {
+    throw new Error("La ilustración recibida no tiene un formato válido.");
   }
-  samples.sort((a, b) => colorClusterScore(b, samples) - colorClusterScore(a, samples));
-  return samples[0] || { r: 255, g: 0, b: 255 };
-}
-
-function colorClusterScore(color, samples) {
-  let score = 0;
-  for (const other of samples) {
-    if (Math.hypot(color.r - other.r, color.g - other.g, color.b - other.b) < 48) score++;
-  }
-  return score;
+  const img=await new Promise((resolve,reject)=>{
+    const image=new Image();
+    const timer=setTimeout(()=>{image.onload=null;image.onerror=null;reject(new Error("No se pudo abrir la ilustración a tiempo."));},15000);
+    image.onload=()=>{clearTimeout(timer);resolve(image);};
+    image.onerror=()=>{clearTimeout(timer);reject(new Error("El navegador no pudo abrir la ilustración de Google."));};
+    image.src=url;
+  });
+  const cutout=cutoutImage(img);
+  if(cutout.clipped) throw new Error("La ilustración toca el borde y puede estar cortada. Se usará un dibujo local.");
+  return {spriteUrl:fittedArtwork(cutout,192).toDataURL("image/png"),
+    portraitUrl:fittedArtwork(cutout,384).toDataURL("image/png")};
 }
 
 function drawWorldBounds() {
@@ -936,8 +913,10 @@ function updateSelection() {
   const key = `${c.id}:${sp.id}`;
   if (selectionKey !== key) {
     const imageUrl = safeImageUrl(sp.portraitUrl);
-    const image = imageUrl ? `<img class="portrait" src="${imageUrl}" alt="Retrato de ${escapeHtml(sp.name)}" loading="lazy">` : "";
+    const image = imageUrl ? `<img class="portrait" src="${imageUrl}" alt="Retrato de ${escapeHtml(sp.name)}" loading="lazy">`
+      : sp.artworkError ? `<p class="hint artwork-warning">Ilustración no disponible: ${escapeHtml(sp.artworkError)} Se usa un dibujo local.</p>` : "";
     panel.innerHTML = `
+      <button class="text-button selection-back" data-return-species>← Ver todas las especies</button>
       ${image}
       <div class="selection-heading"><span class="selection-avatar" style="color:${escapeHtml(sp.color)}"><svg><use href="#${sp.class === "producer" ? "i-leaf" : "i-fish"}"/></svg></span><div><span class="species-chip">${className(sp.class)} · Individuo #${c.id}</span><h2>${escapeHtml(sp.name)}</h2></div></div>
       <p class="hint">${escapeHtml(sp.description)}</p>
@@ -1082,6 +1061,7 @@ canvas.addEventListener("click", (event) => {
     state.selected = best;
     selectionKey = null;
     updateSelection(); updateSpeciesList(); invalidate();
+    revealSelection();
   }
 });
 
@@ -1129,6 +1109,13 @@ window.addEventListener("keyup", (event) => keys.delete(event.key.toLowerCase())
 document.getElementById("startLocal").addEventListener("click", () => startWorld(false));
 document.getElementById("startAI").addEventListener("click", () => startWorld(true, true));
 document.getElementById("startAIText").addEventListener("click", () => startWorld(true, false));
+document.getElementById("checkGoogle").addEventListener("click", async () => {
+  const button=document.getElementById("checkGoogle"),status=document.getElementById("googleStatus");
+  button.disabled=true;status.textContent="Comprobando la clave y los modelos de Google…";
+  try { const result=await requestApi("/api/check-google",{},35000);status.textContent=result.message; }
+  catch(error) {status.textContent=error.message;}
+  finally {button.disabled=!configState.canUseAiText;}
+});
 function syncPauseButton() {
   document.getElementById("pauseBtn").textContent = state.paused ? "Reanudar" : "Pausar";
   document.getElementById("pauseBtn").setAttribute("aria-pressed", String(state.paused));
@@ -1225,7 +1212,7 @@ function updateManualSpeciesCounter() {
   const noImageButton = document.getElementById("manualNoImages");
   counter.textContent = `${count}/${MAX_MANUAL_SPECIES_PER_WORLD}`;
   const atLimit = count >= MAX_MANUAL_SPECIES_PER_WORLD;
-  imageButton.disabled = atLimit || !configState.hasTogetherApiKey || creatingSpecies;
+  imageButton.disabled = atLimit || !configState.canUseAiImages || creatingSpecies;
   noImageButton.disabled = atLimit || creatingSpecies;
   counter.classList.toggle("limit", atLimit);
 }
@@ -1275,8 +1262,7 @@ async function createManual(withImages) {
     habitat: "Zona elegida por el jugador",
     behavior: "Introducida manualmente por el jugador.",
     traits,
-    portraitPrompt: `Detailed scientific illustration of an original aquatic species: ${desc}, clean white background, centered, no text`,
-    spritePrompt: `Simple filled top-down game sprite of an aquatic species: ${desc}, filled colored body, not outline-only, head/front facing exactly to the right, tail/back to the left, solid chroma blue background (#0047ff), avoid blue creature colors, centered, no text`
+    spritePrompt: `An original aquatic species: ${desc||name}. Opaque colored body, sturdy fins, dorsal top-down view, head right, readable silhouette.`
   });
   const status = document.getElementById("manualStatus");
   creatingSpecies = true;
@@ -1285,7 +1271,7 @@ async function createManual(withImages) {
     if (withImages) {
       showBusy("Creando especie", "Generando imagenes IA...");
       status.textContent = "Generando imagenes IA...";
-      await addImagesToSpeciesWithRetry(sp, status);
+      await addSpeciesArtwork(sp, status);
     }
     state.species.push(sp);
     speciesById.set(sp.id, sp);
@@ -1336,6 +1322,17 @@ function togglePanel(panelId, buttonId, force) {
   panel.classList.toggle("collapsed", collapsed);
   document.getElementById(buttonId).setAttribute("aria-expanded", String(!collapsed));
 }
+
+function revealSelection() {
+  togglePanel("ecosystemPanel", "toggleSpecies", true);
+  if (innerWidth < 901) togglePanel("environmentPanel", "toggleEnvironment", false);
+  const panel=document.getElementById("ecosystemPanel"),selection=document.getElementById("selectionPanel");
+  panel.scrollTop=(panel.scrollTop||0)+selection.getBoundingClientRect().top-panel.getBoundingClientRect().top-12;
+}
+
+document.getElementById("selectionPanel").addEventListener("click",event=>{
+  if(event.target.closest("[data-return-species]")) document.getElementById("ecosystemPanel").scrollTop=0;
+});
 document.getElementById("toggleEnvironment").addEventListener("click", () => {
   togglePanel("environmentPanel", "toggleEnvironment");
   if (innerWidth < 901) togglePanel("ecosystemPanel", "toggleSpecies", false);
@@ -1357,6 +1354,7 @@ document.getElementById("speciesList").addEventListener("click", event => {
   state.camera.y = creature.y;
   selectionKey = null;
   updateSelection(); updateSpeciesList(); invalidate();
+  revealSelection();
 });
 document.querySelectorAll(".menu-items button").forEach(button => button.addEventListener("click", () => { document.getElementById("worldMenu").open = false; }));
 

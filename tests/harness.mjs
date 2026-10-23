@@ -17,6 +17,7 @@ export function createGame({ baseline = false, seed = 123456, ref, fetch: fetchI
       dataset: {}, style: {setProperty() {}}, children: [],
       classList: {add(...names) {names.forEach(n => classes.add(n));}, remove(...names) {names.forEach(n => classes.delete(n));}, contains(n) {return classes.has(n);}, toggle(n, force) {const on = force ?? !classes.has(n); on ? classes.add(n) : classes.delete(n); return on;}},
       getContext: () => canvasContext,
+      getBoundingClientRect: () => ({top:0,left:0,width:200,height:400}),
       addEventListener(name, fn) {listeners.set(`${id}:${name}`, fn);},
       appendChild(child) {this.children.push(child);}, setAttribute() {}, removeAttribute() {}, focus() {}, closest() {return null;}, querySelectorAll() {return [];}, querySelector() {return element(`${id}:child`);}
     };
@@ -31,7 +32,7 @@ export function createGame({ baseline = false, seed = 123456, ref, fetch: fetchI
     localStorage: {getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v)},
     setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {},
     requestAnimationFrame: () => 1, cancelAnimationFrame() {},
-    fetch: fetchImpl ?? (async () => ({ok: true, json: async () => ({canUseAiImages: false, canUseAiText: false, hasTogetherApiKey: false, missing: ['geminiApiKey', 'togetherApiKey']})})),
+    fetch: fetchImpl ?? (async () => ({ok: true, json: async () => ({canUseAiImages: false, canUseAiText: false, missing: ['geminiApiKey']})})),
     location: {hostname: 'localhost', protocol: 'http:', reload() {}}, Image: class {set src(value) {}},
   };
   sandbox.window = sandbox;
@@ -42,7 +43,7 @@ export function createGame({ baseline = false, seed = 123456, ref, fetch: fetchI
   };`, context);
   const readSource = file => ref ? execFileSync('git', ['show', `${ref}:${file}`], {encoding: 'utf8', stdio:['ignore','pipe','ignore']}) : fs.readFileSync(file, 'utf8');
   const sources = [];
-  if (!baseline) for (const file of ['spatial-grid.js', 'ecology.js', 'powers.js']) {
+  if (!baseline) for (const file of ['spatial-grid.js', 'ecology.js', 'powers.js', 'sprite-tools.js']) {
     try { sources.push(readSource(file)); } catch (error) { if (!ref) throw error; }
   }
   sources.push(baseline ? execFileSync('git', ['show', 'origin/main:app.js'], {encoding: 'utf8'}) : readSource('app.js'));

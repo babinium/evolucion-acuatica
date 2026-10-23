@@ -94,32 +94,46 @@ La selección actúa sobre la supervivencia y los descendientes de cada individu
 
 Las partidas anteriores se migran al cargar: reciben genes individuales y reservas locales; se conservan individuos, selección, ambiente y poderes. Una partida guardada con este modelo conserva sus genes y reservas de agua.
 
-## IA opcional
+## IA opcional: una sola clave de Google
 
-La IA solo se llama al crear especies o sus imágenes mediante los botones correspondientes. La simulación, las mutaciones y los reinicios no llaman APIs. La generación consume las cuotas o créditos de tu cuenta del proveedor.
+La misma **API de Gemini de Google AI Studio** crea las especies y sus imágenes. No se usa Together ni se necesita una API separada de recorte. La simulación, la evolución y los reinicios funcionan sin conexión y no hacen generaciones. La IA solo se usa al crear un mundo con IA o una especie con imágenes.
 
 ```sh
 cp config.local.example.json config.local.json
 ```
 
-Editá ese archivo y reiniciá el servidor:
+Pegá tu clave en ese archivo local y reiniciá `python3 server.py`:
 
 ```json
 {
-  "geminiApiKey": "tu-clave-de-gemini",
-  "togetherApiKey": "tu-clave-de-together",
+  "geminiApiKey": "tu-clave-de-google-ai-studio",
   "geminiModel": "gemini-3.1-flash-lite",
-  "togetherModel": "black-forest-labs/FLUX.2-dev"
+  "geminiImageModel": "gemini-3.1-flash-image",
+  "geminiImageSize": "512"
 }
 ```
 
-Con Gemini podés crear especies con dibujos locales. Con ambas claves podés pedir retratos y sprites. La interfaz indica si hay claves configuradas; la validez, los créditos y la disponibilidad del modelo se comprueban al generar.
+También se admite `GEMINI_API_KEY` como variable de entorno en ambos servidores; tiene prioridad sobre el archivo. `config.local.json` está ignorado por Git y bloqueado por los servidores web. La clave se envía únicamente desde el servidor a Google mediante la cabecera `x-goog-api-key`.
 
-Los modelos son configurables para no depender de un nombre fijo. Los valores del ejemplo se contrastaron con la [documentación de modelos de Gemini](https://ai.google.dev/gemini-api/docs/deprecations) y el [catálogo de Together](https://docs.together.ai/docs/serverless/models). Los servidores Python y Node usan el mismo contrato del [endpoint de imágenes](https://docs.together.ai/reference/post-images-generations): PNG en base64, 512 × 512 para sprites y 768 × 576 para retratos. Así las imágenes quedan en la partida y no requieren descargar una URL temporal ni acceder a píxeles de otro dominio.
+Obtené la clave en [Google AI Studio](https://aistudio.google.com/apikey). El proyecto asociado necesita acceso a la API de Gemini, **facturación y cuota para generar imágenes**: no alcanza con tener cuota gratuita de texto. Los modelos son configurables. Los nombres y el contrato se contrastaron con el [catálogo oficial](https://ai.google.dev/gemini-api/docs/models) y la [guía de imágenes de Google](https://ai.google.dev/gemini-api/docs/generate-content/image-generation). El valor `512` funciona con el modelo de imágenes indicado; si elegís un modelo que solo admite 1K, cambiá también `geminiImageSize` a `1K`. Para cuidar memoria no se admiten 2K ni 4K en este juego.
 
-Los errores temporales 429/500/502/503/504 se reintentan hasta tres veces en el servidor, con espera progresiva. Los errores de credenciales o de modelo no se reintentan. El cliente no vuelve a generar el par de imágenes automáticamente. Si falla Together al crear un mundo, se conservan las especies de Gemini y se usan dibujos locales. Si falla Gemini, podés cerrar el aviso e iniciar un mundo local.
+En **Crear con inteligencia artificial**, el botón **Comprobar conexión con Google** consulta los metadatos de ambos modelos sin generar contenido ni imágenes. Confirma clave, permisos y disponibilidad; la cuota y la facturación de imágenes se comprueban al generar. La detección inicial de configuración solo comprueba si existe una clave.
 
-Las claves se obtienen en [Google AI Studio](https://aistudio.google.com/app/apikey) y [Together](https://api.together.ai/settings/api-keys). `config.local.json` está ignorado por Git y ambos servidores bloquean su acceso web. Las claves se envían a los proveedores mediante cabeceras del servidor. No deben colocarse en el frontend ni publicarse en GitHub Pages.
+**Crear con imágenes** solicita las especies y luego una sola ilustración por especie, en serie. El mapa y la ficha usan esa misma ilustración, evitando diferencias de aspecto y una segunda generación de pago. **Solo especies** usa dibujos locales. El editor de especies también permite elegir entre imágenes de Google y dibujos locales. Una partida inicial con una especie de cada grupo solicita tres ilustraciones, además del texto de especies.
+
+### Preparación y dibujo de imágenes
+
+- Se pide un único cuerpo opaco, visto desde arriba, cabeza hacia la derecha, sin sombras ni escenario, con margen alrededor y fondo magenta uniforme. Se permite que el cuerpo sea azul o verde, evitando el color elegido como fondo.
+- Google no garantiza salida con transparencia. El navegador elimina el fondo conectado a los bordes con una tolerancia ajustada; no borra todos los píxeles azules, blancos o magenta del interior del cuerpo.
+- Se conserva la transparencia existente, se suavizan los bordes contaminados por el fondo y se descartan motas aisladas pequeñas. Las imágenes sin fondo uniforme, vacías o cortadas por el borde se rechazan y se informa del fallo.
+- Se recorta al contorno visible y se centra sin deformar la proporción. Se guardan PNG transparentes de **192 × 192 para el mapa** y **384 × 384 para la ficha**, con un pequeño margen de seguridad. La imagen original no se conserva en la partida.
+- El trabajo de píxeles ocurre una sola vez al preparar la imagen. El mapa reutiliza el canvas; las especies descendientes comparten la misma entrada de caché. Las imágenes preparadas se conservan al guardar/cargar y no se recortan otra vez.
+- Al seleccionar un individuo o una especie se abre su ficha y se muestra la ilustración; **Ver todas las especies** vuelve a la lista sin desplazar el mundo.
+- Las partidas anteriores con fondo azul, blanco o transparencia siguen usando el procesamiento al cargar sus sprites. Las ilustraciones antiguas siguen disponibles en sus fichas.
+
+Los errores temporales HTTP 429/500/502/503/504 se reintentan hasta tres veces en el servidor. Un fallo de credenciales o modelo detiene las imágenes restantes; lo mismo ocurre si se agotan los reintentos por cuota o indisponibilidad. Los bloqueos de contenido, datos inválidos y fallos de recorte no vuelven a generar automáticamente una imagen. Si fallan imágenes, el mundo conserva las especies y usa dibujos locales donde haga falta; el aviso explica el resultado. Si falla el texto de especies o no coincide la cantidad por dieta, no se solicitan imágenes.
+
+Para comprobar visualmente el recorrido sin clave ni créditos, ejecutá `python3 tests/preview_images.py` y abrí [la prueba aislada](http://127.0.0.1:5174). Usa imágenes **sintéticas**, muestra un aviso permanente y bloquea las conexiones con proveedores. Su puerto separado evita sobrescribir la partida del juego normal. Esta prueba no confirma la calidad artística de Google ni una cuota real: eso requiere generar con tu clave.
 
 ## Verificación
 
@@ -129,7 +143,7 @@ npm run benchmark
 node scripts/ecology-audit.mjs --seconds=960
 ```
 
-Las pruebas usan las herramientas estándar de Node y Python, sin instalar paquetes. Cubren los siete controles ambientales y los nueve rasgos, alimento finito, persecución, herencia y especiación, costos de reproducción, migración de partidas, poderes, pausa, búsqueda espacial, límites de memoria, pestañas ocultas, igualdad entre calidades y contratos de APIs con respuestas simuladas. No consumen créditos ni prueban credenciales reales.
+Las pruebas usan las herramientas estándar de Node y Python, sin instalar paquetes. Cubren los siete controles ambientales y los nueve rasgos, alimento finito, persecución, herencia y especiación, costos de reproducción, migración de partidas, poderes, pausa, búsqueda espacial, límites de memoria, pestañas ocultas, igualdad entre calidades y contratos de Google con respuestas simuladas, recorte de fondos, bordes suavizados, conservación de colores del cuerpo y reutilización de imágenes entre descendientes. No consumen créditos ni prueban credenciales reales.
 
 El benchmark compara `origin/main` con la copia de trabajo usando la misma semilla, 12 especies, 1.200 individuos y 690 manchas de algas, en un contexto VM de Node. Mide 40 actualizaciones y descarta las primeras diez; informa mediana y percentil 95. Mide CPU de la simulación, no renderizado ni FPS del navegador. Para medir solo la versión actual: `npm run benchmark -- --optimized-only`.
 

@@ -2,6 +2,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, quote, unquote
 import json
+import os
+import base64
+import binascii
 import mimetypes
 import urllib.request
 import urllib.error
@@ -11,31 +14,29 @@ ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.local.json"
 MAX_SPECIES_PER_TYPE = 4
 MAX_SPECIES_PER_REQUEST = MAX_SPECIES_PER_TYPE * 3
-MAX_IMAGES_PER_REQUEST = 2
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+GOOGLE_API = "https://generativelanguage.googleapis.com/v1beta/models/"
 
 if CONFIG_PATH.exists():
     CONFIG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 else:
-    CONFIG = {"togetherApiKey": "", "geminiApiKey": ""}
+    CONFIG = {"geminiApiKey": ""}
+if os.environ.get("GEMINI_API_KEY"):
+    CONFIG["geminiApiKey"] = os.environ["GEMINI_API_KEY"]
 
 
 def config_status():
     has_gemini = bool(CONFIG.get("geminiApiKey"))
-    has_together = bool(CONFIG.get("togetherApiKey"))
-    missing = []
-    if not has_gemini:
-        missing.append("geminiApiKey")
-    if not has_together:
-        missing.append("togetherApiKey")
     return {
         "configFile": CONFIG_PATH.name,
+        "provider": "google",
         "hasGeminiApiKey": has_gemini,
-        "hasTogetherApiKey": has_together,
-        "missing": missing,
+        "missing": [] if has_gemini else ["geminiApiKey"],
         "canUseAiText": has_gemini,
-        "canUseAiImages": has_gemini and has_together,
+        "canUseAiImages": has_gemini,
         "geminiModel": CONFIG.get("geminiModel") or "gemini-3.1-flash-lite",
-        "togetherModel": CONFIG.get("togetherModel") or "black-forest-labs/FLUX.2-dev",
+        "geminiImageModel": CONFIG.get("geminiImageModel") or "gemini-3.1-flash-image",
+        "geminiImageSize": CONFIG.get("geminiImageSize") or "512",
     }
 
 
@@ -46,7 +47,7 @@ def clamp_count(value):
         return 0
 
 
-def post_json(url, payload, headers=None):
+def post_json(url, payload, headers=None, timeout=60):
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -59,7 +60,7 @@ def post_json(url, payload, headers=None):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=60) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         try:
@@ -106,8 +107,7 @@ Return ONLY valid JSON, no markdown. Use this schema:
         "foodEfficiency": 1-10,
         "toxicity": 0-10
       }},
-      "portraitPrompt": "English prompt for detailed isolated scientific aquatic creature illustration, clean white background, no text",
-      "spritePrompt": "English prompt for simple filled top-down game sprite of the same species, isolated solid chroma blue background, no text, head facing right"
+      "spritePrompt": "English description of this species' body, colors, fins and distinctive features. A single top-down game creature, head right. Do not describe a background."
     }}
   ]
 }}
@@ -127,10 +127,8 @@ Balance rules:
 - Fertility affects birth opportunities and recovery time. Every baby costs the parent both reserves and edible tissue.
 - High speed, defense, attack, perception, toxicity, or fertility should have tradeoffs. Avoid maximizing every trait.
 - Make species varied, visually memorable, and mechanically fair.
-- Portrait prompt must use a clean white background because it is shown directly in the selection panel.
-- Sprite prompt must use a solid chroma blue background (#0047ff) so the game can remove it safely.
 - Sprite prompt must say the creature is viewed from above and its head/front faces exactly to the right.
-- Sprite prompt must request a filled colored body, not line art, not outline-only, thick readable silhouette, no transparency, no hollow interior, avoid blue body colors.
+- Sprite prompt must describe an opaque filled body, sturdy fins and a clear silhouette, with no background or scenery.
 """
 
 
@@ -162,15 +160,55 @@ def retry_request(operation, sleep=None):
 def provider_error(provider, status, data):
     error = data.get("error", {})
     message = error if isinstance(error, str) else error.get("message", "La solicitud falló.")
-    raise ApiError(f"{provider} HTTP {status}: {message}", status)
+    raise ApiError(google_error(status, message), status)
+
+
+def google_error(status, message):
+    safe = str(message).replace(CONFIG.get("geminiApiKey") or "\x00", "[clave oculta]")[:800]
+    if status == 400:
+        help_text = "Revisá la clave, el modelo y su configuración."
+    elif status in (401, 403):
+        help_text = "Revisá la clave y sus permisos para la API de Gemini."
+    elif status == 404:
+        help_text = "El modelo no está disponible: revisá geminiModel o geminiImageModel."
+    elif status == 429:
+        help_text = "Revisá la cuota y la facturación del proyecto en Google AI Studio."
+    else:
+        help_text = "Podés volver a intentar más tarde."
+    return f"Google HTTP {status}: {safe} {help_text}"
+
+
+def require_google_key():
+    if not CONFIG.get("geminiApiKey"):
+        raise ApiError("Agregá geminiApiKey en config.local.json o GEMINI_API_KEY para usar Google.", 400)
+
+
+def check_google():
+    require_google_key()
+    settings = config_status()
+    for model in dict.fromkeys((settings["geminiModel"], settings["geminiImageModel"])):
+        req = urllib.request.Request(GOOGLE_API + quote(model, safe=""), headers={"x-goog-api-key": CONFIG["geminiApiKey"]})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            try:
+                data = json.loads(error.read().decode("utf-8"))
+            except Exception:
+                data = {}
+            provider_error("Google", error.code, data)
+        except (urllib.error.URLError, TimeoutError):
+            raise ApiError("No se pudo conectar con Google para comprobar los modelos.", 504)
+        if "generateContent" not in data.get("supportedGenerationMethods", []):
+            raise ApiError(f"El modelo {model} no admite generateContent. Revisá la configuración.", 400)
+    return {"ok": True, "message": "Google responde y ambos modelos están disponibles. La cuota de imágenes se comprueba al generar."}
 
 
 def generate_species(body):
+    require_google_key()
     key = CONFIG.get("geminiApiKey")
-    if not key:
-        raise ApiError("Agregá geminiApiKey en config.local.json para usar IA.", 400)
     model = CONFIG.get("geminiModel") or "gemini-3.1-flash-lite"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model, safe='')}:generateContent"
+    url = f"{GOOGLE_API}{quote(model, safe='')}:generateContent"
 
     def request():
         status, data = post_json(
@@ -186,7 +224,7 @@ def generate_species(body):
     data = retry_request(request)
     candidates = data.get("candidates") or [{}]
     parts = candidates[0].get("content", {}).get("parts", [])
-    text = "".join(part.get("text", "") for part in parts)
+    text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
     try:
         parsed = extract_json(text)
     except (ValueError, TypeError):
@@ -198,37 +236,67 @@ def generate_species(body):
              and sp.get("class") in ("producer", "herbivore", "carnivore")][:MAX_SPECIES_PER_REQUEST]
     if not valid:
         raise ApiError("Gemini no devolvió especies válidas.")
+    for key, species_class in (("producers", "producer"), ("herbivores", "herbivore"), ("carnivores", "carnivore")):
+        if sum(sp["class"] == species_class for sp in valid) != clamp_count(body.get(key, 0)):
+            raise ApiError("Google devolvió cantidades de especies distintas de las pedidas. No se generaron imágenes.", 422)
     return valid
 
 
-def generate_image(prompt, mode):
-    key = CONFIG.get("togetherApiKey")
-    if not key:
-        raise ApiError("Agregá togetherApiKey en config.local.json para generar imágenes.", 400)
-    model = CONFIG.get("togetherModel") or "black-forest-labs/FLUX.2-dev"
+def build_image_prompt(prompt):
+    return f"""Create exactly ONE aquatic species illustration for a small 2D ecosystem game.
+Species appearance: {prompt}
+Mandatory asset format (override any conflicting background or framing in the description):
+- Exactly one specimen, orthographic dorsal TOP-DOWN view, not side view, not isometric.
+- Animal head/front points exactly RIGHT, tail/back LEFT. Plants are a compact anchored colony viewed from above.
+- Opaque filled colored body, clear silhouette, readable at 32 pixels; limited detail and sturdy fins.
+- Entire specimen centered, all fins and appendages visible, at least 12% empty margin on every side.
+- Flat perfectly uniform chroma MAGENTA background (#ff00ff). The body must not contain magenta or pink. Blue, cyan and green bodies are allowed.
+- No transparency, checkerboard, gradients, glow, shadows, water, scenery, floor, rocks, props, labels, text, frame, watermark or multiple views.
+- This exact illustration will also be shown enlarged as the species portrait. Return the image only."""
+
+
+def generate_image(prompt):
+    require_google_key()
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 10000:
+        raise ApiError("Falta una descripción de imagen válida (máximo 10000 caracteres).", 400)
+    settings = config_status()
+    size = settings["geminiImageSize"]
+    if size not in ("512", "1K"):
+        raise ApiError("geminiImageSize debe ser 512 o 1K para este juego.", 400)
     payload = {
-        "model": model, "prompt": prompt, "n": 1,
-        "width": 512 if mode == "sprite" else 768,
-        "height": 512 if mode == "sprite" else 576,
-        "response_format": "base64", "output_format": "png",
+        "contents": [{"parts": [{"text": build_image_prompt(prompt)}]}],
+        "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "1:1", "imageSize": size}},
     }
-    if "schnell" in model:
-        payload["steps"] = 4
     status, data = post_json(
-        "https://api.together.ai/v1/images/generations", payload,
-        {"Authorization": f"Bearer {key}"},
+        f"{GOOGLE_API}{quote(settings['geminiImageModel'], safe='')}:generateContent", payload,
+        {"x-goog-api-key": CONFIG["geminiApiKey"]}, timeout=90,
     )
     if status >= 400:
-        provider_error("Together", status, data)
-    results = data.get("data") or [{}]
-    encoded = results[0].get("b64_json", "")
-    if not isinstance(encoded, str) or not encoded:
-        raise ApiError("Together no devolvió una imagen válida en base64.")
-    return f"data:image/png;base64,{encoded}"
+        provider_error("Google", status, data)
+    candidate = (data.get("candidates") or [{}])[0]
+    parts = candidate.get("content", {}).get("parts", [])
+    image = next((p["inlineData"] for p in parts if not p.get("thought") and p.get("inlineData", {}).get("mimeType", "").startswith("image/")), None)
+    if not image or image.get("mimeType") not in ("image/png", "image/jpeg", "image/webp"):
+        reason = data.get("promptFeedback", {}).get("blockReason") or candidate.get("finishReason") or "sin imagen"
+        raise ApiError(f"Google no devolvió una imagen utilizable ({reason}). No se repetirá automáticamente.", 422)
+    encoded = image.get("data")
+    try:
+        if not isinstance(encoded, str) or not encoded or len(encoded) > MAX_IMAGE_BYTES * 4 / 3 + 4:
+            raise ValueError()
+        raw = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error):
+        raise ApiError("Google devolvió datos de imagen inválidos o demasiado grandes.", 422)
+    mime = image["mimeType"]
+    valid = (raw.startswith(b"\x89PNG\r\n\x1a\n") if mime == "image/png" else
+             raw.startswith(b"\xff\xd8\xff") if mime == "image/jpeg" else
+             raw[:4] == b"RIFF" and raw[8:12] == b"WEBP")
+    if not valid:
+        raise ApiError("Google devolvió una imagen con formato inválido.", 422)
+    return f"data:{mime};base64,{encoded}"
 
 
-def generate_image_with_retry(prompt, mode):
-    return retry_request(lambda: generate_image(prompt, mode))
+def generate_image_with_retry(prompt):
+    return retry_request(lambda: generate_image(prompt))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -249,15 +317,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             body = self._read_json()
+            if self.path == "/api/check-google":
+                self._json(200, check_google())
+                return
             if self.path == "/api/generate-species":
                 self._json(200, {"species": generate_species(body)})
                 return
             if self.path == "/api/generate-images":
-                prompts = body.get("prompts", [])[:MAX_IMAGES_PER_REQUEST]
-                images = []
-                for item in prompts:
-                    images.append(generate_image_with_retry(str(item.get("prompt", "")), item.get("mode")))
-                self._json(200, {"images": images})
+                self._json(200, {"image": generate_image_with_retry(body.get("prompt"))})
                 return
             self._json(404, {"error": "Unknown API route."})
         except Exception as error:

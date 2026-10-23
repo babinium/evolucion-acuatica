@@ -260,11 +260,12 @@
                 </span>
               </summary>
               <p class="hint">
-                La IA crea las especies al iniciar. Durante la partida no se hacen llamadas.
+                Google crea las especies y una ilustración por especie para el mapa y su ficha.
+                La generación consume la cuota de tu cuenta. Durante la simulación no se hacen llamadas.
               </p>
               <div class="setup-actions">
                 <button id="startAI" disabled>
-                  Especies + imágenes
+                  Crear con imágenes
                 </button>
                 <button id="startAIText" disabled>
                   Solo especies
@@ -275,7 +276,7 @@
                 <code>
                   python3 server.py
                 </code>
-                y agregá tus claves en
+                y agregá una clave de Google AI Studio como <code>geminiApiKey</code> en
                 <code>
                   config.local.json
                 </code>
@@ -283,8 +284,12 @@
                 <code>
                   config.local.example.json
                 </code>
-                . Reiniciá el servidor al cambiar las claves.
+                . La misma clave sirve para especies e imágenes. Las imágenes necesitan facturación
+                y cuota disponibles en Google. Reiniciá el servidor al cambiar la configuración.
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Obtener clave en Google AI Studio ↗</a>
               </div>
+              <button id="checkGoogle" class="text-button" disabled>Comprobar conexión con Google</button>
+              <p id="googleStatus" class="status" role="status"></p>
               <div id="errorLog" class="error-log hidden">
               </div>
             </details>
@@ -544,7 +549,7 @@
           <div class="manual-grid">
             <label>
               Nombre
-              <input id="manualName" value="Pez" maxlength="70" />
+              <input id="manualName" placeholder="Nombre de la especie" maxlength="70" />
             </label>
             <label>
               Clase
@@ -552,7 +557,7 @@
                 <option value="producer">
                   Productor
                 </option>
-                <option value="herbivore">
+                <option value="herbivore" selected>
                   Herbívoro
                 </option>
                 <option value="carnivore">
@@ -562,9 +567,7 @@
             </label>
             <label class="full">
               Descripción
-              <textarea id="manualDesc" maxlength="1500">
-                Criatura acuática roja, alargada, con dientes visibles y aletas rápidas.
-              </textarea>
+              <textarea id="manualDesc" maxlength="1500" placeholder="Describí su forma, colores, aletas y otros rasgos que quieras ver en la ilustración."></textarea>
             </label>
           </div>
           <div id="manualTraits" class="trait-editor">
@@ -601,6 +604,7 @@
     </script>
     <script src="ecology.js"></script>
     <script src="powers.js"></script>
+    <script src="sprite-tools.js"></script>
     <script src="app.js">
     </script>
   </body>

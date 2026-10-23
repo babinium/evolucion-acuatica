@@ -1,30 +1,29 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { extname, join, resolve, sep } from "node:path";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
+const root = dirname(fileURLToPath(import.meta.url));
 const configPath = join(root, "config.local.json");
 export const config = existsSync(configPath)
   ? JSON.parse(await readFile(configPath, "utf8"))
-  : { togetherApiKey: "", geminiApiKey: "" };
+  : { geminiApiKey: "" };
+if (process.env.GEMINI_API_KEY) config.geminiApiKey = process.env.GEMINI_API_KEY;
+const GOOGLE_API = "https://generativelanguage.googleapis.com/v1beta/models/";
 
-function configStatus() {
+export function configStatus() {
   const hasGeminiApiKey = Boolean(config.geminiApiKey);
-  const hasTogetherApiKey = Boolean(config.togetherApiKey);
-  const missing = [];
-  if (!hasGeminiApiKey) missing.push("geminiApiKey");
-  if (!hasTogetherApiKey) missing.push("togetherApiKey");
   return {
     configFile: "config.local.json",
+    provider: "google",
     hasGeminiApiKey,
-    hasTogetherApiKey,
-    missing,
+    missing: hasGeminiApiKey ? [] : ["geminiApiKey"],
     canUseAiText: hasGeminiApiKey,
-    canUseAiImages: hasGeminiApiKey && hasTogetherApiKey,
+    canUseAiImages: hasGeminiApiKey,
     geminiModel: config.geminiModel || "gemini-3.1-flash-lite",
-    togetherModel: config.togetherModel || "black-forest-labs/FLUX.2-dev"
+    geminiImageModel: config.geminiImageModel || "gemini-3.1-flash-image",
+    geminiImageSize: config.geminiImageSize || "512"
   };
 }
 
@@ -41,7 +40,7 @@ const mime = {
 
 const MAX_SPECIES_PER_TYPE = 4;
 const MAX_SPECIES_PER_REQUEST = MAX_SPECIES_PER_TYPE * 3;
-const MAX_IMAGES_PER_REQUEST = 2;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 function sendJson(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
@@ -94,8 +93,7 @@ Return ONLY valid JSON, no markdown. Use this schema:
         "foodEfficiency": 1-10,
         "toxicity": 0-10
       },
-      "portraitPrompt": "English prompt for detailed isolated scientific aquatic creature illustration, white background, no text",
-      "spritePrompt": "English prompt for extremely simple top-down game sprite of the same species, solid chroma blue background (#0047ff), filled body, head facing right, no text"
+      "spritePrompt": "English description of this species' body, colors, fins and distinctive features. A single top-down game creature, head right. Do not describe a background."
     }
   ]
 }
@@ -136,12 +134,12 @@ export async function retryRequest(operation, sleep = ms => new Promise(resolve 
   }
 }
 
-async function postJson(url, payload, headers, provider) {
+async function postJson(url, payload, headers, provider, timeout = 60000) {
   let response;
   try {
     response = await fetch(url, {
       method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "evolucion-local/0.2", ...headers },
-      body: JSON.stringify(payload), signal: AbortSignal.timeout(60000)
+      body: JSON.stringify(payload), signal: AbortSignal.timeout(timeout)
     });
   } catch {
     throw new ApiError(`${provider}: no se pudo conectar o se agotó el tiempo de espera.`, 504);
@@ -149,60 +147,124 @@ async function postJson(url, payload, headers, provider) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = typeof data.error === "string" ? data.error : data.error?.message;
-    throw new ApiError(`${provider} HTTP ${response.status}: ${message || "La solicitud falló."}`, response.status);
+    throw new ApiError(googleError(response.status, message || "La solicitud falló."), response.status);
   }
   return data;
 }
 
+function googleError(status, message) {
+  // Provider errors occasionally echo request values. Never forward our key.
+  const safe = String(message).replaceAll(config.geminiApiKey || "\u0000", "[clave oculta]").slice(0, 800);
+  const help = status === 400 ? "Revisá la clave, el modelo y su configuración."
+    : [401, 403].includes(status) ? "Revisá la clave y sus permisos para la API de Gemini."
+    : status === 404 ? "El modelo no está disponible: revisá geminiModel o geminiImageModel."
+    : status === 429 ? "Revisá la cuota y la facturación del proyecto en Google AI Studio."
+    : "Podés volver a intentar más tarde.";
+  return `Google HTTP ${status}: ${safe} ${help}`;
+}
+
+function requireGoogleKey() {
+  if (!config.geminiApiKey) throw new ApiError("Agregá geminiApiKey en config.local.json o GEMINI_API_KEY para usar Google.", 400);
+}
+
+export async function checkGoogle() {
+  requireGoogleKey();
+  const { geminiModel, geminiImageModel } = configStatus();
+  for (const model of new Set([geminiModel, geminiImageModel])) {
+    let response;
+    try { response = await fetch(GOOGLE_API + encodeURIComponent(model), {
+      headers: { "x-goog-api-key": config.geminiApiKey }, signal: AbortSignal.timeout(15000)
+    }); } catch { throw new ApiError("No se pudo conectar con Google para comprobar los modelos.", 504); }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new ApiError(googleError(response.status, data.error?.message || "La comprobación falló."), response.status);
+    if (!data.supportedGenerationMethods?.includes("generateContent")) {
+      throw new ApiError(`El modelo ${model} no admite generateContent. Revisá la configuración.`, 400);
+    }
+  }
+  return { ok: true, message: "Google responde y ambos modelos están disponibles. La cuota de imágenes se comprueba al generar." };
+}
+
 export async function generateSpecies(body) {
-  if (!config.geminiApiKey) throw new ApiError("Agregá geminiApiKey en config.local.json para usar IA.", 400);
+  requireGoogleKey();
   const model = config.geminiModel || "gemini-3.1-flash-lite";
   const data = await retryRequest(() => postJson(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    `${GOOGLE_API}${encodeURIComponent(model)}:generateContent`,
     { contents: [{ parts: [{ text: buildSpeciesPrompt(body) }] }], generationConfig: { temperature: 0.95, responseMimeType: "application/json" } },
     { "x-goog-api-key": config.geminiApiKey }, "Gemini"
   ));
-  const text = data.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("") || "";
+  const text = data.candidates?.[0]?.content?.parts?.filter(part => !part.thought).map(part => part.text || "").join("") || "";
   let parsed;
   try { parsed = extractJson(text); }
   catch { throw new ApiError("Gemini no devolvió un JSON válido de especies."); }
   const species = Array.isArray(parsed.species) ? parsed.species.filter(sp => sp && typeof sp.name === "string" && ["producer", "herbivore", "carnivore"].includes(sp.class)).slice(0, MAX_SPECIES_PER_REQUEST) : [];
   if (!species.length) throw new ApiError("Gemini no devolvió especies válidas.");
+  for (const [key, type] of [["producers", "producer"], ["herbivores", "herbivore"], ["carnivores", "carnivore"]]) {
+    if (species.filter(sp => sp.class === type).length !== clampCount(body[key])) {
+      throw new ApiError("Google devolvió cantidades de especies distintas de las pedidas. No se generaron imágenes.", 422);
+    }
+  }
   return species;
 }
 
-export async function generateImage(prompt, mode) {
-  if (!config.togetherApiKey) throw new ApiError("Agregá togetherApiKey en config.local.json para generar imágenes.", 400);
-  const model = config.togetherModel || "black-forest-labs/FLUX.2-dev";
-  const data = await postJson("https://api.together.ai/v1/images/generations", {
-    model, prompt, n: 1, width: mode === "sprite" ? 512 : 768, height: mode === "sprite" ? 512 : 576,
-    response_format: "base64", output_format: "png",
-    ...(model.includes("schnell") ? { steps: 4 } : {})
-  }, { Authorization: `Bearer ${config.togetherApiKey}` }, "Together");
-  const encoded = data.data?.[0]?.b64_json;
-  if (typeof encoded !== "string" || !encoded) throw new ApiError("Together no devolvió una imagen válida en base64.");
-  return `data:image/png;base64,${encoded}`;
+export function buildImagePrompt(prompt) {
+  return `Create exactly ONE aquatic species illustration for a small 2D ecosystem game.
+Species appearance: ${prompt}
+Mandatory asset format (override any conflicting background or framing in the description):
+- Exactly one specimen, orthographic dorsal TOP-DOWN view, not side view, not isometric.
+- Animal head/front points exactly RIGHT, tail/back LEFT. Plants are a compact anchored colony viewed from above.
+- Opaque filled colored body, clear silhouette, readable at 32 pixels; limited detail and sturdy fins.
+- Entire specimen centered, all fins and appendages visible, at least 12% empty margin on every side.
+- Flat perfectly uniform chroma MAGENTA background (#ff00ff). The body must not contain magenta or pink. Blue, cyan and green bodies are allowed.
+- No transparency, checkerboard, gradients, glow, shadows, water, scenery, floor, rocks, props, labels, text, frame, watermark or multiple views.
+- This exact illustration will also be shown enlarged as the species portrait. Return the image only.`;
 }
 
-async function generateImageWithRetry(prompt, mode) {
-  return retryRequest(() => generateImage(prompt, mode));
+export async function generateImage(prompt) {
+  requireGoogleKey();
+  if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 10000) throw new ApiError("Falta una descripción de imagen válida (máximo 10000 caracteres).", 400);
+  const { geminiImageModel: model, geminiImageSize: size } = configStatus();
+  if (!["512", "1K"].includes(size)) throw new ApiError("geminiImageSize debe ser 512 o 1K para este juego.", 400);
+  const data = await postJson(`${GOOGLE_API}${encodeURIComponent(model)}:generateContent`, {
+    contents: [{ parts: [{ text: buildImagePrompt(prompt) }] }],
+    generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "1:1", imageSize: size } }
+  }, { "x-goog-api-key": config.geminiApiKey }, "Google imágenes", 90000);
+  const candidate = data.candidates?.[0];
+  const image = candidate?.content?.parts?.find(part => !part.thought && part.inlineData?.mimeType?.startsWith("image/"))?.inlineData;
+  if (!image || !["image/png", "image/jpeg", "image/webp"].includes(image.mimeType)) {
+    const reason = data.promptFeedback?.blockReason || candidate?.finishReason || "sin imagen";
+    throw new ApiError(`Google no devolvió una imagen utilizable (${reason}). No se repetirá automáticamente.`, 422);
+  }
+  const encoded = image.data;
+  if (typeof encoded !== "string" || !encoded.length || encoded.length > MAX_IMAGE_BYTES * 4 / 3 + 4
+    || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4) {
+    throw new ApiError("Google devolvió datos de imagen inválidos o demasiado grandes.", 422);
+  }
+  const bytes = Buffer.from(encoded, "base64");
+  const valid = image.mimeType === "image/png" ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+    : image.mimeType === "image/jpeg" ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+    : bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP";
+  if (!valid) throw new ApiError("Google devolvió una imagen con formato inválido.", 422);
+  return `data:${image.mimeType};base64,${encoded}`;
+}
+
+export async function generateImageWithRetry(prompt) {
+  return retryRequest(() => generateImage(prompt));
 }
 
 async function handleApi(req, res) {
   try {
     const body = await readBody(req);
+    if (req.url === "/api/check-google") {
+      sendJson(res, 200, await checkGoogle());
+      return;
+    }
     if (req.url === "/api/generate-species") {
       const species = await generateSpecies(body);
       sendJson(res, 200, { species });
       return;
     }
     if (req.url === "/api/generate-images") {
-      const prompts = Array.isArray(body.prompts) ? body.prompts.slice(0, MAX_IMAGES_PER_REQUEST) : [];
-      const images = [];
-      for (const item of prompts) {
-        images.push(await generateImageWithRetry(String(item.prompt || ""), item.mode));
-      }
-      sendJson(res, 200, { images });
+      sendJson(res, 200, { image: await generateImageWithRetry(body.prompt) });
       return;
     }
     sendJson(res, 404, { error: "Unknown API route." });

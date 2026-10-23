@@ -461,6 +461,12 @@ h1 em {
   overflow-wrap: anywhere;
 }
 
+.config-help a {
+  display: inline-block;
+  color: var(--accent);
+  margin-top: 6px;
+}
+
 .status {
   font-size: 10px;
   line-height: 1.6;
@@ -984,10 +990,23 @@ h1 em {
   width: 100%;
   max-height: 146px;
   object-fit: contain;
-  background: #eff5ef;
+  height: 146px;
+  background: radial-gradient(ellipse at center, #224858, #102a34);
   border-radius: 8px;
   border: 1px solid var(--line);
   margin-bottom: 10px;
+}
+
+.artwork-warning {
+  color: var(--warn);
+  margin-bottom: 10px;
+}
+
+.selection-back {
+  width: 100%;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+  font-size: 11px;
 }
 
 .detail-grid {
