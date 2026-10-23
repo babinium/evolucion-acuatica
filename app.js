@@ -10,6 +10,8 @@ const MAX_INITIAL_SPECIES_PER_TYPE = 4;
 const MAX_MANUAL_SPECIES_PER_WORLD = 4;
 const INITIAL_HERBIVORES_PER_SPECIES = 24;
 const INITIAL_CARNIVORES_PER_SPECIES = Math.max(1, Math.round(INITIAL_HERBIVORES_PER_SPECIES / 6));
+const MAX_SIMULATION_SPEED = 10;
+const MAX_ECOLOGY_STEP = 1 / 6;
 
 const traitLabels = {
   size: "Tamaño",
@@ -537,14 +539,19 @@ function update(dt) {
   updateCamera(dt);
   if (state.paused) return;
   const simDt = dt * state.speed;
-  state.day += simDt * 0.018;
-  updateEnvironment(simDt);
-  updateResources(simDt);
-  updateCorpses(simDt);
-  updateZones(simDt);
-  rebuildSpatialIndexes();
-  updateCreatures(simDt);
-  recalcSpecies();
+  // Keep the ecological step as small as at 5x; 10x needs two bounded steps.
+  const steps = Math.max(1, Math.ceil(simDt / MAX_ECOLOGY_STEP));
+  const stepDt = simDt / steps;
+  for (let i=0;i<steps;i++) {
+    state.day += stepDt * 0.018;
+    updateEnvironment(stepDt);
+    updateResources(stepDt);
+    updateCorpses(stepDt);
+    updateZones(stepDt);
+    rebuildSpatialIndexes();
+    updateCreatures(stepDt);
+    recalcSpecies();
+  }
 }
 
 function updateCamera(dt) {
@@ -1148,7 +1155,7 @@ function syncPauseButton() {
 }
 function togglePause() { state.paused = !state.paused; syncPauseButton(); invalidate(); }
 function setSimulationSpeed(value) {
-  state.speed = clamp(Math.round(Number(value) || 1), 1, 5);
+  state.speed = clamp(Math.round(Number(value) || 1), 1, MAX_SIMULATION_SPEED);
   setText("speedLabel", `${state.speed}x`);
 }
 document.getElementById("pauseBtn").addEventListener("click", togglePause);

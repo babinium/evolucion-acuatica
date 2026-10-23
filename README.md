@@ -2,7 +2,7 @@
 
 Un simulador de evolución con vista de dios: productores, herbívoros, depredadores, mutaciones e intervenciones. HTML, CSS y JavaScript con canvas, sin dependencias ni compilación.
 
-**Versión estable: [1.1.0](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.1.0).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
+**Versión estable: [1.1.1](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.1.1).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
 
 ## Jugar
 
@@ -34,7 +34,7 @@ Para una partida liviana, empezá con un mundo compacto o mediano y una especie 
 - Clic en un individuo o en la lista de especies: inspeccionar rasgos y población.
 - Clic en el retrato de la ficha: ampliar la ilustración a tres veces su tamaño, ajustada al espacio disponible y sin consumir API. Clic en cualquier lugar o Escape: cerrar la ampliación.
 - Barra espaciadora: pausar o reanudar. Los controles de velocidad no cambian la velocidad de la cámara.
-- Velocidad de la simulación: los botones − y + de la barra superior cambian de 1× en 1×, entre 1× y 5×. Las velocidades fraccionarias de partidas anteriores se redondean al cargar.
+- Velocidad de la simulación: los botones − y + de la barra superior cambian de 1× en 1×, entre 1× y 10×. Las velocidades fraccionarias de partidas anteriores se redondean al cargar. A velocidades altas el avance se divide en pasos de hasta 1/6 s para conservar la precisión del movimiento, la alimentación y la reproducción; la cámara mantiene su velocidad habitual.
 - Ambiente y Especies: mostrar u ocultar paneles en pantallas pequeñas.
 - Intervenciones: teclas 1–6 o botones del panel; clic en el agua para aplicar. Rueda para ajustar el área, Mayús + rueda para zoom y Escape o clic derecho para cancelar.
 - Menú **•••**: guardar, cargar, reiniciar con las mismas especies o empezar un mundo nuevo.
@@ -173,4 +173,4 @@ El benchmark compara `origin/main` con la copia de trabajo usando la misma semil
 
 Para comparar contra una revisión concreta, usá `node scripts/benchmark.mjs --compare=a701582`. El mismo ejecutor y generador aleatorio se aplican a ambas versiones. El ejecutor conserva funciones en un ámbito léxico para evitar el costo artificial de resolver cada llamada a través del objeto global de la VM; por eso los tiempos no son comparables con mediciones hechas con el ejecutor anterior.
 
-`ecology-audit.mjs` sigue tres semillas reproducibles (123456, 42 y 2026), sin variación ambiental aleatoria ni intervenciones, y registra cada minuto poblaciones, recursos, generaciones, linajes, reservas locales y valores finitos. Usa pasos de 1/6 s, el paso máximo a velocidad 5×. Podés elegir semillas con `--seeds=42,2026` y una duración con `--seconds=960`. No simula el renderizado ni prueba que el ecosistema permanezca equilibrado indefinidamente.
+`ecology-audit.mjs` sigue tres semillas reproducibles (123456, 42 y 2026), sin variación ambiental aleatoria ni intervenciones, y registra cada minuto poblaciones, recursos, generaciones, linajes, reservas locales y valores finitos. Usa pasos de 1/6 s, el límite de integración ecológica que también se respeta al acelerar a 10×. Podés elegir semillas con `--seeds=42,2026` y una duración con `--seconds=960`. No simula el renderizado ni prueba que el ecosistema permanezca equilibrado indefinidamente.
