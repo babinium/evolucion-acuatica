@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server
 
 
-def png_fixture(kind):
+def png_fixture(kind, evolved=False):
     size = 512
     rows = bytearray()
     leaves = [(math.cos(a * math.pi / 3), math.sin(a * math.pi / 3)) for a in range(6)]
@@ -44,6 +44,8 @@ def png_fixture(kind):
                     color = (245, 247, 224)
                 if (u - 190) ** 2 + (v - 119) ** 2 < 3 ** 2:
                     color = (12, 30, 43)
+            if evolved and color != (255, 0, 255):
+                color = (min(255, color[1] + 15), max(25, color[0] // 2), min(255, color[2] + 20))
             rows.extend(color)
     def chunk(name, data):
         return struct.pack("!I", len(data)) + name + data + struct.pack("!I", zlib.crc32(name + data))
@@ -69,6 +71,24 @@ class PreviewHandler(server.Handler):
         if self.path.split("?")[0] == "/":
             html = (server.ROOT / "index.html").read_text()
             banner = '<aside style="position:fixed;bottom:80px;right:12px;z-index:9999;background:#3b2948;color:white;padding:7px 12px;border-radius:6px;font:12px sans-serif">PRUEBA VISUAL · Imágenes sintéticas · Sin gasto de API</aside>'
+            if "evolution" in self.path:
+                banner += '''<aside style="position:fixed;bottom:120px;left:330px;z-index:9999;background:#243746;color:white;padding:12px;border-radius:8px;font:13px sans-serif">
+                  <button id="fixtureBranch" style="padding:8px">Avanzar una variación</button><output id="fixtureStage">Preparar un mundo con imágenes</output>
+                  </aside><script>
+                  let fixtureCursor=null;
+                  document.getElementById('fixtureBranch').onclick=()=>{
+                    if(!state.started)return;
+                    state.paused=true;syncPauseButton();
+                    const before=fixtureCursor || state.species.find(sp=>sp.class==='herbivore');
+                    const parent=state.creatures.find(c=>c.speciesId===before.id);
+                    const genes=Object.fromEntries(traitKeys.map(k=>[k,traitMax(k,before.class) ? (before.traits[k]>traitMax(k,before.class)/2 ? traitMax(k,before.class)*0.2 : traitMax(k,before.class)*0.8) : 0]));
+                    const child=maybeMutateSpecies(before,parent,genes);
+                    state.selected=spawnCreature(child,1800,1800,parent.generation+1,genes);
+                    fixtureCursor=child;state.camera={x:1800,y:1800,zoom:0.8};
+                    recalcSpecies();refreshEvolutionUI();updateHud();processEvolutionQueue();
+                    document.getElementById('fixtureStage').textContent=' · '+(child.variationDepth ? 'Variación '+child.variationDepth+'/2' : 'Nueva especie');
+                  };
+                  </script>'''
             raw = html.replace("</body>", banner + "</body>").encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -85,8 +105,13 @@ if __name__ == "__main__":
     cache = tempfile.TemporaryDirectory(prefix="evo-visual-cache-")
     server.generation_cache = server.GenerationCache(cache.name)
     images = {kind: png_fixture(kind) for kind in ("producer", "herbivore", "carnivore")}
+    evolved_images = {kind: png_fixture(kind, True) for kind in images}
     def synthetic_provider(url, payload, headers=None, **kwargs):
         if url == server.OPENROUTER_API + "chat/completions":
+            if payload["response_format"]["json_schema"]["name"] == "evolved_identity":
+                identity = {"name": "Aleta de jade", "description": "Nuevo herbívoro de aletas robustas y escamas de jade, descendiente del nadador azul.",
+                            "visualDescription": "EVOLVED jade aquatic grazer with broad sturdy fins and ridged scales."}
+                return 200, {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(identity)}}]}
             slots = payload["response_format"]["json_schema"]["schema"]["properties"]["species"]["required"]
             counts = {key: sum(slot.startswith(kind + "_") for slot in slots)
                       for key, kind in (("producers", "producer"), ("herbivores", "herbivore"), ("carnivores", "carnivore"))}
@@ -96,7 +121,8 @@ if __name__ == "__main__":
             return 200, {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps({"species": species})}}]}
         if url == server.OPENROUTER_API + "images":
             kind = next((kind for kind in images if f"Species type: {kind}" in payload["prompt"]), "herbivore")
-            return 200, {"data": [{"b64_json": images[kind].split(",", 1)[1], "media_type": "image/png"}]}
+            source = evolved_images if "EVOLVED" in payload["prompt"] else images
+            return 200, {"data": [{"b64_json": source[kind].split(",", 1)[1], "media_type": "image/png"}]}
         raise RuntimeError("La prueba recibió una solicitud no prevista.")
     server.post_json = synthetic_provider
     server.check_provider = lambda: {"ok": True, "message": "Prueba visual: no se consultó a ningún proveedor ni se consumió saldo."}

@@ -261,7 +261,7 @@
               </summary>
               <p class="hint">
                 La IA crea las especies y una ilustración por especie para el mapa y su ficha.
-                Las generaciones nuevas consumen el saldo o la cuota de tu cuenta. Durante la simulación no se hacen llamadas.
+                Cada tercera variación consecutiva origina otra especie. Con imágenes, también se prepara su nueva identidad durante la partida y consume saldo; podés desactivarlo en el panel izquierdo.
               </p>
               <div class="setup-actions">
                 <button id="startAI" disabled>
@@ -407,6 +407,8 @@
         </div>
         <details class="environment-settings"><summary><svg aria-hidden="true"><use href="#i-sliders"/></svg>Ambiente<span aria-hidden="true">⌄</span></summary><p class="ecology-explainer">El aporte global se transforma por el consumo de cada zona. Inspeccioná un habitante para ver el agua donde vive.</p><div id="envControls"></div><div class="ecology-indicators"><span>Nutrientes disponibles<b id="nutrientStock">70 / 100</b></span><span>Mayor generación viva<b id="generationStat">1</b></span></div><p class="ecology-explainer">Luz + nutrientes → plantas → herbívoros → carnívoros. Los restos reciclan nutrientes; la vegetación ofrece cobertura para escapar o acechar.</p></details>
         <div class="performance-control">
+          <label class="repeat-power"><input id="evolutionAi" type="checkbox" />Ilustrar nuevas especies con IA</label>
+          <span id="evolutionAiStatus">Las variaciones reutilizan la imagen de su especie.</span>
           <label for="qualitySelect">Calidad visual</label>
           <select id="qualitySelect"><option value="eco">Bajo consumo</option><option value="balanced">Equilibrado</option><option value="quality">Más detalle</option></select>
           <span id="performanceStat">30 FPS máx.</span>
@@ -614,6 +616,7 @@
     <script src="ecology.js"></script>
     <script src="powers.js"></script>
     <script src="sprite-tools.js"></script>
+    <script src="evolution.js"></script>
     <script src="app.js">
     </script>
   </body>

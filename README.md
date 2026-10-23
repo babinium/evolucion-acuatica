@@ -2,7 +2,7 @@
 
 Un simulador de evolución con vista de dios: productores, herbívoros, depredadores, mutaciones e intervenciones. HTML, CSS y JavaScript con canvas, sin dependencias ni compilación.
 
-**Versión estable: [1.0.1](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.0.1).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
+**Versión estable: [1.1.0](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.1.0).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
 
 ## Jugar
 
@@ -94,13 +94,19 @@ Cada individuo tiene genes propios. La población inicial ya contiene variación
 
 Se quitaron del editor los rasgos sin uso para esa dieta: los productores no nadan ni atacan; los herbívoros no usan ataque. Los demás rasgos siguen activos porque sus cálculos son pequeños y sus efectos se usan en la simulación.
 
-La selección actúa sobre la supervivencia y los descendientes de cada individuo. Cuando una cría acumula suficiente diferencia genética respecto de su linaje, aparece una rama nueva; el progenitor conserva su especie y sus genes. También puede ocurrir con evolución lenta, mediante acumulación de cambios. Se frena la creación de ramas al registrar 48 especies; los genes siguen variando dentro de los linajes existentes. Las mutaciones reutilizan las imágenes y no llaman a ninguna API. No se garantiza que todos los linajes o dietas sobrevivan a cualquier condición.
+La selección actúa sobre la supervivencia y los descendientes de cada individuo. Cuando una cría acumula suficiente diferencia genética respecto de su linaje, aparece una rama nueva; el progenitor conserva su especie y sus genes. También puede ocurrir con evolución lenta, mediante acumulación de cambios. No se cuentan nacimientos ni pequeñas mutaciones: se cuentan separaciones genéticas sucesivas de una misma rama.
 
-Las partidas anteriores se migran al cargar: reciben genes individuales y reservas locales; se conservan individuos, selección, ambiente y poderes. Una partida guardada con este modelo conserva sus genes y reservas de agua.
+**Especie A → variación 1 → variación 2 → especie B.** Al intentar una tercera variación, nace una especie con nombre, descripción e ilustración propios. Conserva su dieta (productor, herbívoro o carnívoro), los genes realmente heredados y la competencia ecológica. La nueva especie vuelve a empezar su contador de variaciones. Las ramas hermanas llevan su propia profundidad; sus números no se suman. El inspector muestra la etapa y el antecesor; el contador general agrupa las variaciones dentro de su especie.
+
+Las dos variaciones comparten la imagen de su especie. **Crear con imágenes** activa también **Ilustrar nuevas especies con IA** para las especies que surjan durante esa partida; se puede desactivar en el panel izquierdo. Cada nueva identidad pide como máximo un texto compacto y una ilustración, en segundo plano y de una en una. Las partidas locales y **Solo especies** usan nuevos nombres, descripciones y dibujos locales sin gastar saldo. Activar la casilla después no regenera automáticamente las identidades locales anteriores. Si falta saldo o falla una respuesta, se conserva el dibujo local y se detiene la cola; desactivar y activar la casilla permite atender las identidades pendientes, sin reenviar las fallidas.
+
+Se conservan como máximo **48 registros de linajes**, incluidas especies y variaciones. Una variación extinta puede liberar un lugar; nunca se elimina una población viva ni una identidad completa para hacer espacio. Al alcanzar el límite, los genes siguen variando dentro de los linajes existentes. No se garantiza que todos los linajes o dietas sobrevivan a cualquier condición.
+
+Las partidas anteriores se migran al cargar: reciben genes individuales y reservas locales; se conservan individuos, selección, ambiente y poderes. Los viejos números globales de variación se interpretan por sus antecesores, sin comprar imágenes retroactivamente. Los nuevos guardados conservan identidad, etapa y estado de preparación; las imágenes compartidas se almacenan una sola vez. Una solicitud guardada mientras estaba en curso se marca interrumpida al cargar y no se reenvía automáticamente.
 
 ## IA opcional: una sola clave de OpenRouter
 
-Una clave de **OpenRouter** sirve para crear las especies y sus imágenes. El texto usa por defecto `openai/gpt-4.1-nano`, sin razonamiento adicional, y las ilustraciones `qwen/qwen-image-2.1-turbo` a 1K, su menor resolución admitida. El modelo de imágenes cobra por ilustración; el tamaño del sprite final sigue siendo 192 px. No necesitás una clave ni facturación de Google, ni una API separada de recorte. La simulación, la evolución y los reinicios funcionan sin conexión y no hacen generaciones.
+Una clave de **OpenRouter** sirve para crear las especies y sus imágenes. El texto usa por defecto `openai/gpt-4.1-nano`, sin razonamiento adicional, y las ilustraciones `qwen/qwen-image-2.1-turbo` a 1K, su menor resolución admitida. El modelo de imágenes cobra por ilustración; el tamaño del sprite final sigue siendo 192 px. No necesitás una clave ni facturación de Google, ni una API separada de recorte. La simulación y la evolución funcionan también sin conexión, con identidades locales; las ilustraciones de IA durante la partida son opcionales.
 
 ```sh
 cp config.local.example.json config.local.json
@@ -141,16 +147,17 @@ En **Crear con inteligencia artificial**, **Comprobar conexión** consulta la au
 
 - Cada acción envía **como máximo una solicitud de generación por respuesta que falta**. No hay reenvíos automáticos ante errores, cortes o esperas agotadas. OpenRouter recibe un modelo explícito, prioridad de precio y `allow_fallbacks: false`; no se usan routers automáticos ni herramientas auxiliares. El jugador decide si vuelve a intentar. La falta de saldo también detiene las imágenes restantes del mundo.
 - Texto: instrucciones compactas, solo los campos utilizados, una respuesta JSON y un límite de `256 + 320 × número de especies` tokens de salida (máximo 4.096). OpenRouter recibe un esquema estricto con un campo obligatorio por cada especie y dieta pedidas; el servidor valida los datos antes de solicitar imágenes. El modelo predeterminado de OpenRouter no usa pensamiento adicional. Google directo pide pensamiento mínimo a Flash-Lite compatible; no significa necesariamente cero.
+- Nueva especie por evolución: `/api/evolve-species` pide únicamente nombre, descripción y apariencia. No vuelve a generar rasgos ni cambia la dieta. El límite de texto es 448 tokens con OpenRouter y 512 con Google; la respuesta se guarda por identidad, modelo e instrucciones. Solo entonces se solicita su ilustración. No se envían peticiones para las dos variaciones, familias ya extintas ni pestañas ocultas; una petición ya enviada puede terminar al cambiar de pestaña.
 - Imágenes: una ilustración y sin búsquedas ni herramientas. OpenRouter usa la API dedicada de imágenes, `n: 1` y 1K con Qwen; permite configurar 512, 768 o 1K si el modelo elegido lo admite. Google directo usa 512 px y un techo de 4.096 tokens de salida. Para cuidar memoria no se admiten 2K ni 4K. El mapa siempre reutiliza la versión reducida a 192 px.
 - La carpeta local `.ai-cache/` conserva respuestas e imágenes válidas entre reinicios; Python y Node pueden reutilizarlas al cambiar de servidor. Se distinguen modelo, instrucciones y ajustes; los cambios relevantes producen otra entrada. Peticiones simultáneas idénticas al mismo servidor comparten una generación. La caché no contiene claves ni cabeceras y tiene un límite de 128 respuestas y 64 MiB; al llenarse elimina las menos recientes. Las imágenes preparadas que ya estén en una partida siguen allí.
-- Simular, evolucionar, usar poderes, reiniciar y cargar una partida no generan contenido ni consumen saldo de los proveedores. El recorte y las fichas se calculan localmente.
+- Los pasos de simulación, poderes, dibujos locales, recorte y fichas no consumen saldo. Cargar o reiniciar reutiliza las identidades terminadas; si había identidades pendientes aún no solicitadas y la casilla de IA está activa, su preparación puede continuar. Crear una nueva especie por evolución solo consume saldo con esa opción activada y cuando falta su contenido en la caché.
 - La API rechaza acciones enviadas desde otros sitios. La configuración, sus variantes de respaldo, `.env`, la caché y los archivos ocultos no se sirven por HTTP, incluidos los accesos mediante enlaces simbólicos.
 - Git ignora la configuración local, sus respaldos, `.env` y la caché. `python3 scripts/check-secrets.py --history` revisa archivos versionados e historial sin mostrar los valores, incluidas claves de Google y OpenRouter. Los hooks de este equipo bloquean commits y pushes con credenciales detectadas o archivos privados. En un clon nuevo se activan con `git config core.hooksPath .githooks`.
 
 Si fallan imágenes, el mundo conserva las especies y usa dibujos locales donde haga falta; el aviso y la ficha explican el resultado. Si falla el texto de especies o no coincide la cantidad por dieta, no se solicitan imágenes. Los datos inválidos y fallos de recorte no provocan otra generación automática.
 
 
-Para comprobar visualmente el recorrido sin clave ni créditos, ejecutá `python3 tests/preview_images.py` y abrí [la prueba aislada](http://127.0.0.1:5174). Usa imágenes **sintéticas**, muestra un aviso permanente y bloquea las conexiones con proveedores. Su puerto separado evita sobrescribir la partida del juego normal. Esta prueba no confirma la calidad artística del proveedor ni una cuota real: eso requiere generar con tu clave.
+Para comprobar visualmente el recorrido sin clave ni créditos, ejecutá `python3 tests/preview_images.py` y abrí [la prueba aislada](http://127.0.0.1:5174). En [la prueba de especiación](http://127.0.0.1:5174/?evolution), creá un mundo con imágenes y usá **Avanzar una variación** tres veces para comprobar la secuencia sin esperar generaciones naturales. Usa imágenes **sintéticas**, muestra un aviso permanente y bloquea las conexiones con proveedores. Su puerto separado evita sobrescribir la partida del juego normal. Esta prueba no confirma la calidad artística del proveedor ni una cuota real: eso requiere generar con tu clave.
 
 ## Verificación
 

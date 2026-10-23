@@ -21,6 +21,7 @@ GOOGLE_API = "https://generativelanguage.googleapis.com/v1beta/models/"
 OPENROUTER_API = "https://openrouter.ai/api/v1/"
 PROMPTS = json.loads((ROOT / "generation-prompts.json").read_text())
 SPECIES_SCHEMA = json.loads((ROOT / "species-schema.json").read_text())
+EVOLUTION_SCHEMA = json.loads((ROOT / "evolution-schema.json").read_text())
 generation_cache = GenerationCache(ROOT / ".ai-cache")
 
 if CONFIG_PATH.exists():
@@ -372,6 +373,65 @@ def generate_openrouter_species(body, settings):
     return generation_cache.get_or_create("species", {"provider": "openrouter", "payload": payload}, generate, fresh=body.get("fresh") is True)["value"]
 
 
+def evolution_input(body):
+    ancestor = body.get("ancestor")
+    trait_keys = SPECIES_SCHEMA["properties"]["traits"]["required"]
+    def valid_traits(traits):
+        return isinstance(traits, dict) and all(type(traits.get(k)) in (int, float)
+            and math.isfinite(traits[k]) and 0 <= traits[k] <= 30 for k in trait_keys)
+    if (body.get("class") not in ("producer", "herbivore", "carnivore")
+            or not isinstance(body.get("requestId"), str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", body["requestId"])
+            or not isinstance(ancestor, dict)
+            or any(not isinstance(ancestor.get(k), str) or not ancestor[k].strip() for k in ("name", "description", "visualDescription"))
+            or not valid_traits(body.get("traits")) or not valid_traits(ancestor.get("traits"))):
+        raise ApiError("Falta un linaje válido para la nueva especie.", 400)
+    def traits(source):
+        return {k: math.floor(source[k] * 100 + 0.5) for k in trait_keys}
+    return {"class": body["class"], "ancestor": {
+        "name": ancestor["name"].strip()[:70], "description": ancestor["description"].strip()[:200],
+        "visualDescription": ancestor["visualDescription"].strip()[:240], "traits": traits(ancestor["traits"])}, "traits": traits(body["traits"])}
+
+
+def evolve_species(body):
+    lineage = evolution_input(body)
+    settings = require_provider()
+    prompt = PROMPTS["evolution"].replace("$LINEAGE", canonical_json(lineage))
+    openrouter = settings["provider"] == "openrouter"
+    payload = ({"model": settings["textModel"], "messages": [{"role": "user", "content": prompt}], "temperature": 0.7, "max_tokens": 448,
+                "response_format": {"type": "json_schema", "json_schema": {"name": "evolved_identity", "strict": True, "schema": EVOLUTION_SCHEMA}},
+                "provider": {"sort": "price", "allow_fallbacks": False, "require_parameters": True}} if openrouter else
+               {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.7, "candidateCount": 1, "maxOutputTokens": 512,
+                "responseMimeType": "application/json", **thinking_config(settings["textModel"])}})
+    def generate():
+        url = (OPENROUTER_API + "chat/completions" if openrouter else GOOGLE_API + quote(settings["textModel"], safe="") + ":generateContent")
+        headers = {"Authorization": "Bearer " + CONFIG["openrouterApiKey"]} if openrouter else {"x-goog-api-key": CONFIG["geminiApiKey"]}
+        status, data = post_json(url, payload, headers)
+        if status >= 400 or data.get("error"):
+            provider_error(settings["providerLabel"], status if status >= 400 else 502, data)
+        try:
+            if openrouter:
+                choice = (data.get("choices") or [{}])[0]
+                if choice.get("finish_reason") not in (None, "stop"):
+                    raise ValueError()
+                text = (choice.get("message") or {}).get("content")
+            else:
+                parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+                text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+            identity = extract_json(text if isinstance(text, str) else "")
+            if (not isinstance(identity, dict) or set(identity) != set(EVOLUTION_SCHEMA["required"])
+                    or any(not isinstance(v, str) or not v.strip() for v in identity.values())):
+                raise ValueError()
+            identity = {k: identity[k].strip()[:limit] for k, limit in (("name", 70), ("description", 180), ("visualDescription", 240))}
+            if identity["name"] == lineage["ancestor"]["name"]:
+                raise ValueError()
+        except (ValueError, TypeError, AttributeError):
+            raise ApiError("La IA no devolvió una identidad nueva válida. Se conserva el dibujo local; no se reenvió la solicitud.", 422)
+        return {"value": identity, "usage": openrouter_usage(data) if openrouter else usage_of(data)}
+    record = generation_cache.get_or_create("species", {"purpose": "evolved-identity", "provider": settings["provider"],
+        "model": settings["textModel"], "requestId": body["requestId"], "payload": payload}, generate)
+    return record["value"]
+
+
 def build_image_prompt(prompt):
     body = PROMPTS["imageProducer"] if re.search(r"Species type:\s*producer\.\s*$", prompt, re.I) else PROMPTS["imageAnimal"]
     return PROMPTS["image"].replace("$APPEARANCE", prompt).replace("$BODY", body)
@@ -479,6 +539,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if self.path == "/api/generate-images":
                 self._json(200, {"image": generate_image(body.get("prompt"))})
+                return
+            if self.path == "/api/evolve-species":
+                self._json(200, {"identity": evolve_species(body)})
                 return
             self._json(404, {"error": "Unknown API route."})
         except Exception as error:

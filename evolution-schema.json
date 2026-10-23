@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "description": {"type": "string"},
+    "visualDescription": {"type": "string"}
+  },
+  "required": ["name", "description", "visualDescription"],
+  "additionalProperties": false
+}
