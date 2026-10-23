@@ -136,12 +136,6 @@ function setQuality(value) {
   updateHud();
 }
 
-const toolDefs = {
-  nutrientBloom: { radius: 190, tip: "Crea una floracion de nutrientes y comida natural en el area." },
-  protect: { radius: 220, tip: "Protege temporalmente a los individuos dentro del area." },
-  disaster: { radius: 230, tip: "Daña a los individuos dentro del area para probar resiliencia." },
-  favor: { radius: 150, tip: "Crea nuevos individuos de la especie seleccionada cerca del click." }
-};
 
 function logError(message) {
   const box = document.getElementById("errorLog");
@@ -369,6 +363,9 @@ function seedWorld(speciesList) {
   state.day = 0;
   state.paused = false;
   state.activeTool = null;
+  favorSpeciesId = null;
+  favorOptionsSignature = null;
+  syncToolUI();
   simulationAccumulator = 0;
   state.extinct = 0;
   state.lastEvent = "Tu ecosistema está vivo. Seleccioná una especie para conocerla.";
@@ -569,7 +566,9 @@ function updateResources(dt) {
   const growth = (state.env.light + state.env.nutrients + state.env.oxygen) / 300;
   spawnAlgaeByQuadrant(dt, growth);
   for (const r of state.resources) {
-    r.amount = clamp(r.amount + dt * growth * 2.2 - state.env.toxicity * dt * 0.01, 0, r.max * 1.6);
+    const water = localWater(r);
+    const localGrowth = water === state.env ? growth : (state.env.light + state.env.nutrients + water.oxygen) / 300;
+    r.amount = clamp(r.amount + dt * localGrowth * 2.2 - water.toxicity * dt * 0.01, 0, r.max * 1.6);
     r.radius = Math.sqrt(Math.max(1, r.amount)) * 2.2;
   }
   state.resources = state.resources.filter((r) => r.amount > 2);
@@ -606,13 +605,12 @@ function updateZones(dt) {
 
 function updateCreatures(dt) {
   const newborns = [];
-  const deaths = [];
   const livingClassCounts = countLivingClasses();
   const maxCorpseRadius = state.corpses.reduce((max, corpse) => Math.max(max, corpse.radius), 0);
   corpseGrid.maxRadius = maxCorpseRadius;
   for (const c of state.creatures) {
     const sp = getSpecies(c);
-    if (!sp) continue;
+    if (!sp || c.health <= 0 || c.energy <= -35) continue;
     const oldX = c.x, oldY = c.y, oldSpeciesId = c.speciesId;
     const t = sp.traits;
     c.age += dt * 0.55;
@@ -621,7 +619,7 @@ function updateCreatures(dt) {
     const classCost = sp.class === "herbivore" ? 0.68 : sp.class === "carnivore" ? 0.86 : 0.42;
     const metabolism = (0.55 + t.metabolism * 0.13 + t.size * 0.055 + t.speed * 0.025) * classCost * dt;
     c.energy -= metabolism * (0.7 + state.env.temperature / 120);
-    c.health += c.protected > 0 ? dt * 2 : 0;
+    c.health += isProtected(c) ? dt * 2 : 0;
     c.health = clamp(c.health, 0, c.maxHealth);
 
     if (sp.class === "producer") producerThink(c, sp, dt);
@@ -644,8 +642,9 @@ function updateCreatures(dt) {
     }
 
     if (c.energy < 0) c.health += c.energy * dt * 0.9;
-    if (state.env.oxygen < 18) c.health -= dt * (18 - state.env.oxygen) * 0.18;
-    if (state.env.toxicity > 62) c.health -= dt * (state.env.toxicity - 62) * 0.08;
+    const water = localWater(c);
+    if (water.oxygen < 18) damageCreature(c, dt * (18 - water.oxygen) * 0.18);
+    if (water.toxicity > 62) damageCreature(c, dt * (water.toxicity - 62) * 0.08);
     if (c.age > 260 + t.size * 18) c.health -= dt * 3;
     creatureGrid.move(c, oldX, oldY);
     classGrids[sp.class]?.move(c, oldX, oldY);
@@ -661,7 +660,12 @@ function updateCreatures(dt) {
   for (const item of newborns) {
     spawnCreature(item.species, item.parent.x + rand(-35, 35), item.parent.y + rand(-35, 35), item.parent.generation + 1);
   }
-  const before = state.creatures.length;
+  const deaths = removeDeadCreatures();
+  if (deaths && Math.random() < 0.25) state.lastEvent = `${deaths} muertes recientes`;
+}
+
+function removeDeadCreatures() {
+  const deaths = [];
   state.creatures = state.creatures.filter((c) => {
     const alive = c.health > 0 && c.energy > -35;
     if (!alive) deaths.push(c);
@@ -679,7 +683,7 @@ function updateCreatures(dt) {
       });
     }
   }
-  if (before !== state.creatures.length && Math.random() < 0.25) state.lastEvent = `${before - state.creatures.length} muertes recientes`;
+  return deaths.length;
 }
 
 function isCrowdedForReproduction(creature, species) {
@@ -748,7 +752,7 @@ function animalThink(c, sp, dt, livingClassCounts) {
   const t = sp.traits;
   let nearestThreat = null;
   let threatD = 99999;
-  if (sp.class === "herbivore") {
+  if (sp.class === "herbivore" && !isProtected(c)) {
     for (const other of classGrids.carnivore.query(c.x, c.y, 130 + t.perception * 18)) {
       const osp = getSpecies(other);
       if (!osp || osp.class !== "carnivore") continue;
@@ -787,7 +791,7 @@ function eatProducer(c, sp, dt, classCounts) {
   const producerBias = preferAlgae ? 220 : -120;
   const algaeBias = preferAlgae ? -150 : 160;
   for (const other of classGrids.producer.query(c.x, c.y, searchRadius)) {
-    if (other.health <= 0 || other.energy <= -35) continue;
+    if (other.health <= 0 || other.energy <= -35 || isProtected(other)) continue;
     const otherSp = getSpecies(other);
     if (!otherSp || otherSp.class !== "producer") continue;
     const d = Math.hypot(c.x - other.x, c.y - other.y);
@@ -847,9 +851,9 @@ function eatProducer(c, sp, dt, classCounts) {
     const bite = dt * (4.6 + sp.traits.foodEfficiency * 1.25);
     const defenseCost = producerSp.traits.defense * 0.16 + producerSp.traits.toxicity * 0.28;
     best.energy -= bite * 0.32;
-    best.health -= Math.max(0.6, bite - defenseCost);
+    damageCreature(best, Math.max(0.6, bite - defenseCost));
     c.energy = clamp(c.energy + Math.max(0.4, bite * (0.76 - producerSp.traits.toxicity * 0.025)), 0, 130);
-    if (producerSp.traits.toxicity > 0) c.health -= dt * producerSp.traits.toxicity * 0.18;
+    if (producerSp.traits.toxicity > 0) damageCreature(c, dt * producerSp.traits.toxicity * 0.18);
     c.health = clamp(c.health + dt * 1.2, 0, c.maxHealth);
     c.state = "comiendo";
     c.vx *= 0.72;
@@ -877,7 +881,7 @@ function hunt(c, sp, dt) {
   let bestBackupScore = -99999;
   const huntRadius = foodVisionRadius(c, sp, 360 + hunger * 340, 58 + hunger * 28);
   for (const other of animalGrid.query(c.x, c.y, huntRadius)) {
-    if (other.health <= 0 || other.energy <= -35) continue;
+    if (other.health <= 0 || other.energy <= -35 || isProtected(other)) continue;
     if (other.id === c.id) continue;
     const osp = getSpecies(other);
     if (!osp || osp.class === "producer") continue;
@@ -911,7 +915,7 @@ function hunt(c, sp, dt) {
     const attack = sp.traits.attack + sp.traits.speed * 0.5 + sp.traits.size * 0.25 + rand(-3, 3);
     const defense = preySp.traits.defense + preySp.traits.speed * 0.35 + preySp.traits.toxicity * 0.25 + rand(-3, 3);
     if (attack > defense) {
-      prey.health -= dt * (20 + sp.traits.attack * 5.5);
+      damageCreature(prey, dt * (20 + sp.traits.attack * 5.5));
       c.energy = clamp(c.energy + dt * (5 + sp.traits.foodEfficiency * 0.8), 0, 130);
       c.state = "cazando";
       if (prey.health <= 0) {
@@ -920,7 +924,7 @@ function hunt(c, sp, dt) {
         state.lastEvent = `${sp.name} cazo a ${preySp.name}`;
       }
     } else {
-      c.health -= dt * (preySp.traits.defense * 0.38 + preySp.traits.toxicity * 0.62);
+      damageCreature(c, dt * (preySp.traits.defense * 0.38 + preySp.traits.toxicity * 0.62));
       c.energy -= dt * 2.2;
       prey.energy -= dt * 2;
       c.state = "fallo caza";
@@ -1019,7 +1023,7 @@ function nearestFoodScent(c, sp) {
     }
   }
   for (const other of animalGrid.query(c.x, c.y, scentRadius)) {
-    if (other.id === c.id || other.speciesId === c.speciesId) continue;
+    if (other.id === c.id || other.speciesId === c.speciesId || isProtected(other)) continue;
     const osp = getSpecies(other);
     if (!osp || osp.class === "producer") continue;
     const d = dist(c, other);
@@ -1171,34 +1175,51 @@ function drawCorpses() {
   }
 }
 
+function clipToWorld() {
+  const origin = worldToScreen(0, 0);
+  ctx.beginPath();
+  ctx.rect(origin.x, origin.y, state.worldSize * state.camera.zoom, state.worldSize * state.camera.zoom);
+  ctx.clip();
+}
+
 function drawZones() {
+  ctx.save(); clipToWorld();
   for (const z of state.zones) {
     if (!inView(z.x, z.y, z.radius * state.camera.zoom + 60)) continue;
+    const def = toolDefs[z.type];
+    if (!def) continue;
     const s = worldToScreen(z.x, z.y);
-    ctx.fillStyle = z.type === "disaster" ? "rgba(255, 95, 80, 0.16)" : z.type === "protect" ? "rgba(103, 167, 255, 0.14)" : "rgba(244, 196, 92, 0.13)";
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, z.radius * state.camera.zoom, 0, Math.PI * 2);
-    ctx.fill();
+    const remaining = clamp(z.ttl / (z.duration || def.duration || 2), 0, 1);
+    ctx.globalAlpha = def.duration ? 0.11 : remaining * 0.18;
+    ctx.fillStyle = def.color;
+    ctx.beginPath(); ctx.arc(s.x, s.y, z.radius * state.camera.zoom, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = def.duration ? 0.55 : remaining * 0.6;
+    ctx.strokeStyle = def.color; ctx.lineWidth = 1;
+    ctx.stroke();
+    if (def.duration) {
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = def.color; ctx.font = "10px system-ui, sans-serif";
+      ctx.fillText(`${def.name} · ${Math.ceil(z.ttl)} s`, s.x - 32, s.y - z.radius * state.camera.zoom - 7);
+    }
   }
+  ctx.restore();
 }
 
 function drawToolPreview() {
-  if (!state.activeTool || !state.started) return;
-  const s = worldToScreen(state.mouse.worldX, state.mouse.worldY);
+  const def = toolDefs[state.activeTool];
+  if (!def || !state.started || !pointerOverWorld) return;
+  const point = screenToWorld(state.mouse.x, state.mouse.y);
+  const valid = insideWorld(point.x, point.y);
+  ctx.save(); clipToWorld();
   const radius = state.toolRadius * state.camera.zoom;
-  ctx.save();
-  ctx.fillStyle = "rgba(255, 65, 65, 0.12)";
-  ctx.strokeStyle = "rgba(255, 80, 70, 0.9)";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 6]);
+  ctx.fillStyle = valid ? def.color : "#84969e";
+  ctx.globalAlpha = 0.12;
+  ctx.beginPath(); ctx.arc(state.mouse.x, state.mouse.y, radius, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 0.95; ctx.strokeStyle = valid ? def.color : "#84969e";
+  ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]); ctx.stroke(); ctx.setLineDash([]);
   ctx.beginPath();
-  ctx.arc(s.x, s.y, radius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = "rgba(255, 235, 230, 0.95)";
-  ctx.font = "12px system-ui, sans-serif";
-  ctx.fillText(`${Math.round(state.toolRadius)} px`, s.x + radius + 8, s.y - 8);
+  ctx.moveTo(state.mouse.x - 6, state.mouse.y); ctx.lineTo(state.mouse.x + 6, state.mouse.y);
+  ctx.moveTo(state.mouse.x, state.mouse.y - 6); ctx.lineTo(state.mouse.x, state.mouse.y + 6); ctx.stroke();
   ctx.restore();
 }
 
@@ -1213,7 +1234,8 @@ function drawCreatures() {
     ctx.translate(s.x, s.y);
     const angle = Math.hypot(c.vx, c.vy) > 0.02 ? Math.atan2(c.vy, c.vx) : 0;
     ctx.rotate(angle);
-    ctx.globalAlpha = c.protected > 0 ? 1 : 0.88;
+    const shielded = isProtected(c);
+    ctx.globalAlpha = shielded ? 1 : 0.88;
     const sprite = getSprite(sp);
     if (sprite?.ready) {
       const drawSize = r * (sp.class === "producer" ? 3.1 : 4.2);
@@ -1224,7 +1246,7 @@ function drawCreatures() {
       const h = r * (sp.class === "producer" ? 3.2 : 2.8);
       ctx.drawImage(shape, -w / 2, -h / 2, w, h);
     }
-    if (c.protected > 0) {
+    if (shielded) {
       ctx.strokeStyle = "#95cde2";
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(0, 0, r * 2.1, 0, Math.PI * 2); ctx.stroke();
@@ -1399,6 +1421,7 @@ function updateHud() {
   setText("speedLabel", `${state.speed.toFixed(1)}x`);
   setText("zoomLabel", `${Math.round(state.camera.zoom * 100)}%`);
   setText("mapSizeLabel", `${state.worldSize.toLocaleString("es-AR")} × ${state.worldSize.toLocaleString("es-AR")}`);
+  updateToolPreviewStatus();
   setText("performanceStat", `${performancePresets[quality].label} · ${state.paused ? "En pausa" : `${measuredFps || performancePresets[quality].fps} FPS`} · ${performancePresets[quality].fps} máx.`);
 }
 
@@ -1504,6 +1527,7 @@ function updateSelection() {
 let speciesListSignature = "";
 function updateSpeciesList() {
   const signature = state.species.map(sp => `${sp.id}:${sp.population}:${sp.extinct}`).join("|") + `:${state.selected?.speciesId || ""}`;
+  if (state.activeTool === "favor") syncFavorOptions();
   if (signature === speciesListSignature) return;
   speciesListSignature = signature;
   setText("speciesCount", state.species.filter(sp => !sp.extinct).length);
@@ -1567,16 +1591,20 @@ function syncEnvControls() {
 }
 
 canvas.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0) return;
+  if (event.button !== 0 && event.button !== 1) return;
+  if (event.button === 1) event.preventDefault();
   dragging = true;
   dragDistance = 0;
   lastMouse = { x: event.clientX, y: event.clientY };
 });
 
 window.addEventListener("pointerup", () => { dragging = false; });
-window.addEventListener("pointercancel", () => { dragging = false; });
+window.addEventListener("pointercancel", () => { dragging = false; dragDistance = Infinity; });
+canvas.addEventListener("pointerenter", event => { pointerOverWorld = true; updateMouseWorld(event); updateToolPreviewStatus(); invalidate(); });
+canvas.addEventListener("pointerleave", () => { pointerOverWorld = false; updateToolPreviewStatus(); invalidate(); });
+canvas.addEventListener("contextmenu", event => { if (state.activeTool) { event.preventDefault(); cancelTool(); } });
 window.addEventListener("pointermove", (event) => {
-  updateMouseWorld(event);
+  if (pointerOverWorld || dragging) updateMouseWorld(event);
   if (!dragging) return;
   const dx = event.clientX - lastMouse.x;
   const dy = event.clientY - lastMouse.y;
@@ -1596,7 +1624,7 @@ function updateMouseWorld(event) {
 }
 
 canvas.addEventListener("click", (event) => {
-  if (dragDistance > 5) return;
+  if (dragDistance > 5 || event.button > 0) return;
   if (!state.started) return;
   const p = screenToWorld(event.clientX, event.clientY);
   if (state.activeTool) {
@@ -1619,10 +1647,9 @@ canvas.addEventListener("click", (event) => {
 canvas.addEventListener("wheel", (event) => {
   event.preventDefault();
   updateMouseWorld(event);
-  if (state.activeTool) {
+  if (state.activeTool && !event.shiftKey) {
     const direction = event.deltaY > 0 ? -1 : 1;
-    state.toolRadius = clamp(state.toolRadius + direction * 25, 40, 650);
-    document.getElementById("toolHint").textContent = `Radio: ${Math.round(state.toolRadius)}. Rueda para ajustar, click para aplicar.`;
+    setToolRadius(state.toolRadius + direction * 20);
     return;
   }
   const before = screenToWorld(event.clientX, event.clientY);
@@ -1635,7 +1662,7 @@ canvas.addEventListener("wheel", (event) => {
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    state.activeTool = null;
+    cancelTool();
     const modal = document.getElementById("modal");
     if (!modal.classList.contains("hidden")) {
       modal.classList.add("hidden"); document.getElementById("newSpeciesBtn").focus();
@@ -1645,6 +1672,11 @@ window.addEventListener("keydown", (event) => {
     invalidate(); return;
   }
   if (event.target?.closest("input, textarea, select") || event.ctrlKey || event.metaKey || event.altKey) return;
+  const power = Object.entries(toolDefs).find(([, def]) => def.shortcut === event.key);
+  if (power && !event.repeat) { event.preventDefault(); selectTool(power[0]); return; }
+  if (state.activeTool && ["[", "]"].includes(event.key)) {
+    event.preventDefault(); setToolRadius(state.toolRadius + (event.key === "]" ? 10 : -10)); return;
+  }
   if (event.key === " " && state.started && !event.target?.closest("button, summary")) { event.preventDefault(); if (!event.repeat) togglePause(); return; }
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) event.preventDefault();
   keys.add(event.key.toLowerCase());
@@ -1652,51 +1684,6 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("blur", () => { keys.clear(); dragging = false; });
 window.addEventListener("keyup", (event) => keys.delete(event.key.toLowerCase()));
 
-function applyTool(x, y) {
-  const tool = state.activeTool;
-  const radius = state.toolRadius;
-  if (tool === "nutrientBloom") {
-    const count = Math.max(6, Math.round(radius / 10));
-    for (let i = 0; i < count; i++) {
-      const angle = rand(0, Math.PI * 2);
-      const d = Math.sqrt(Math.random()) * radius;
-      spawnResource(x + Math.cos(angle) * d, y + Math.sin(angle) * d, rand(45, 120));
-    }
-    state.lastEvent = "Floracion de nutrientes creada";
-  }
-  if (tool === "protect") {
-    for (const c of state.creatures) if (Math.hypot(c.x - x, c.y - y) < radius) c.protected = 80;
-    state.zones.push({ type: "protect", x, y, radius, ttl: 80 });
-    state.lastEvent = "Zona protegida temporalmente";
-  }
-  if (tool === "disaster") {
-    for (const c of state.creatures) if (Math.hypot(c.x - x, c.y - y) < radius) c.health -= rand(20, 70);
-    state.zones.push({ type: "disaster", x, y, radius, ttl: 30 });
-    state.lastEvent = "Catastrofe localizada";
-  }
-  if (tool === "favor") {
-    const c = state.selected;
-    if (!c || !state.creatures.includes(c)) {
-      state.lastEvent = "Elegí primero una especie o un individuo para favorecerlo.";
-      updateHud(); return;
-    }
-    if (c) {
-      const sp = getSpecies(c);
-      const count = Math.max(3, Math.round(radius / 22));
-      for (let i = 0; i < count; i++) {
-        const angle = rand(0, Math.PI * 2);
-        const d = Math.sqrt(Math.random()) * radius;
-        spawnCreature(sp, x + Math.cos(angle) * d, y + Math.sin(angle) * d, c.generation);
-      }
-      state.lastEvent = `Reproduccion favorecida: ${sp.name}`;
-    }
-  }
-  state.activeTool = null;
-  document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", "false"));
-  invalidate();
-  rebuildSpatialIndexes(); recalcSpecies(); updateSpeciesList(); updateSelection(); updateHud();
-  document.getElementById("toolHint").textContent = "Intervención aplicada. Elegí otra para continuar.";
-}
 
 document.getElementById("startLocal").addEventListener("click", () => startWorld(false));
 document.getElementById("startAI").addEventListener("click", () => startWorld(true, true));
@@ -1710,15 +1697,17 @@ function togglePause() { state.paused = !state.paused; syncPauseButton(); invali
 document.getElementById("pauseBtn").addEventListener("click", togglePause);
 document.getElementById("speedDown").addEventListener("click", () => state.speed = clamp(state.speed - 0.25, 0.25, 5));
 document.getElementById("speedUp").addEventListener("click", () => state.speed = clamp(state.speed + 0.25, 0.25, 5));
-document.querySelector(".tool-grid").addEventListener("click", (event) => {
-  const btn = event.target.closest("button[data-tool]");
-  if (!btn) return;
-  state.activeTool = state.activeTool === btn.dataset.tool ? null : btn.dataset.tool;
-  document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === state.activeTool)));
-  invalidate();
-  state.toolRadius = toolDefs[state.activeTool]?.radius || 210;
-  document.getElementById("toolHint").textContent = `${toolDefs[state.activeTool]?.tip || "Intervencion seleccionada"} Rueda para ajustar radio, click en el mapa para aplicar.`;
+document.querySelector(".tool-grid").addEventListener("click", event => {
+  const button = event.target.closest("button[data-tool]");
+  if (button) selectTool(button.dataset.tool);
 });
+document.getElementById("toolRadius").addEventListener("input", event => setToolRadius(event.target.value));
+document.querySelectorAll("[data-radius]").forEach(button => button.addEventListener("click", () => setToolRadius(button.dataset.radius)));
+document.getElementById("toolRepeat").addEventListener("change", event => { toolRepeat = event.target.checked; });
+document.getElementById("favorSpecies").addEventListener("change", event => { favorSpeciesId = event.target.value; invalidate(); });
+document.getElementById("cancelTool").addEventListener("click", () => cancelTool());
+document.getElementById("dockCancelTool").addEventListener("click", () => cancelTool());
+
 function saveWorld() {
   if (!state.started) return;
   const snapshot = { ...state, selected: null, selectedId: state.selected?.id || null, activeTool: null };
@@ -1755,7 +1744,9 @@ function loadWorld() {
     state.creatures = state.creatures.slice(0, MAX_CREATURES);
     state.resources = state.resources.slice(0, MAX_RESOURCES);
     state.corpses = (state.corpses || []).slice(0, MAX_CORPSES);
-    state.zones = state.zones || [];
+    state.zones = (state.zones || []).filter(z => toolDefs[z.type]
+      && [z.x, z.y, z.radius, z.ttl].every(Number.isFinite) && z.radius > 0 && z.ttl > 0).slice(-MAX_ACTIVE_ZONES - MAX_TOOL_MARKERS);
+    favorSpeciesId = null; favorOptionsSignature = null; syncToolUI();
     state.selected = state.creatures.find(c => c.id === selectedId) || null;
     state.nextCreatureId = Math.max(state.nextCreatureId || 1, ...state.creatures.map(c => c.id + 1));
     spriteCache.clear(); proceduralSprites.clear(); selectionKey = null; speciesListSignature = "";
@@ -1903,11 +1894,11 @@ function togglePanel(panelId, buttonId, force) {
 }
 document.getElementById("toggleEnvironment").addEventListener("click", () => {
   togglePanel("environmentPanel", "toggleEnvironment");
-  if (innerWidth < 621) togglePanel("ecosystemPanel", "toggleSpecies", false);
+  if (innerWidth < 901) togglePanel("ecosystemPanel", "toggleSpecies", false);
 });
 document.getElementById("toggleSpecies").addEventListener("click", () => {
   togglePanel("ecosystemPanel", "toggleSpecies");
-  if (innerWidth < 621) togglePanel("environmentPanel", "toggleEnvironment", false);
+  if (innerWidth < 901) togglePanel("environmentPanel", "toggleEnvironment", false);
 });
 if (innerWidth < 901) togglePanel("ecosystemPanel", "toggleSpecies", false);
 if (innerWidth < 621) togglePanel("environmentPanel", "toggleEnvironment", false);
@@ -1929,6 +1920,7 @@ buildEnvControls();
 buildManualTraits();
 updateManualSpeciesCounter();
 initEnvironment();
+syncToolUI();
 setQuality(quality);
 loadConfigStatus();
 frameRequest = requestAnimationFrame(loop);

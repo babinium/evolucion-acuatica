@@ -31,10 +31,27 @@ Para una partida liviana, empezá con un mundo compacto o mediano y una especie 
 - Clic en un individuo o en la lista de especies: inspeccionar rasgos y población.
 - Barra espaciadora: pausar o reanudar. Los controles de velocidad no cambian la velocidad de la cámara.
 - Ambiente y Especies: mostrar u ocultar paneles en pantallas pequeñas.
-- Intervenciones: elegir una acción, ajustar el radio con la rueda y aplicarla en el agua. Escape cancela.
+- Intervenciones: teclas 1–6 o botones del panel; clic en el agua para aplicar. Rueda para ajustar el área, Mayús + rueda para zoom y Escape o clic derecho para cancelar.
 - Menú **•••**: guardar, cargar, reiniciar con las mismas especies o empezar un mundo nuevo.
 
 Las partidas se guardan en este navegador. Cargar recupera también el individuo seleccionado. Si se agota el espacio de almacenamiento se informa el error y se conserva la partida anterior.
+
+## Intervenir en el mundo
+
+Los seis poderes funcionan también en pausa, sin invocar APIs. Cada uno tiene un color y recuerda su tamaño de área durante la sesión. Podés elegir un tamaño pequeño, medio o grande, usar el deslizador o ajustar con la rueda (las teclas `[` y `]` también ajustan el radio). La vista previa indica el alcance y el número de objetivos; al aplicar se informa cuántos individuos o recursos cambiaron.
+
+| Tecla | Poder | Efecto |
+| --- | --- | --- |
+| 1 | Floración | Crea algas distribuidas dentro del área y de los límites del mundo. Sirven de alimento a los herbívoros. |
+| 2 | Proteger | Refugio de 80 segundos de simulación: bloquea ataques, catástrofes, falta de oxígeno y toxicidad; regenera salud a quienes están dentro, incluidos los que llegan después. No detiene el hambre ni el envejecimiento. |
+| 3 | Catástrofe | Quita 60 de salud a los habitantes sin escudo. Las bajas, los cadáveres y las extinciones se registran de inmediato, incluso en pausa. |
+| 4 | Favorecer | Agrega individuos de la especie elegida en el selector del poder; no depende de mantener vivo al individuo seleccionado. |
+| 5 | Alimentar | Entrega hasta 45 de energía a cada herbívoro y carnívoro del área, hasta un máximo de 130. No afecta plantas, individuos muertos o animales ya saciados. |
+| 6 | Limpiar agua | Zona de 60 segundos de simulación con oxígeno mínimo 60 y toxicidad máxima 20 para los organismos y las algas del área. Las condiciones globales y el exterior de la zona no cambian. |
+
+**Mantener poder activo** permite repetir aplicaciones sin volver a seleccionarlo. Desmarcá la casilla para volver automáticamente a explorar después de una aplicación exitosa. Arrastrar desplaza la cámara sin lanzar el poder. Para cancelar podés usar Escape, clic derecho, el botón × o volver a pulsar el mismo poder.
+
+Las duraciones avanzan al ritmo de la simulación y se congelan en pausa; se conservan al guardar/cargar. Hasta 12 refugios o zonas de agua limpia pueden permanecer activos. Volver a aplicar cerca del centro de una zona del mismo tipo renueva su duración y ajusta su radio. Los límites de población y de algas también se respetan al usar poderes; cuando no hay espacio u objetivos, el aviso lo explica y el poder sigue disponible para intentar en otra zona.
 
 ## IA opcional
 

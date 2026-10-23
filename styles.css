@@ -1748,3 +1748,73 @@ h1 em {
     scroll-behavior: auto!important;
   }
 }
+
+/* Keep the powers and their brush settings in reach on smaller PC displays. */
+.interventions { border-top: 0; padding-top: 0; }
+.tool-grid button { gap: 6px; position: relative; padding: 9px 7px; min-height: 40px; font-size: 10px; }
+.tool-grid button span { flex: 1; white-space: nowrap; }
+.tool-grid kbd { font: 8px system-ui, sans-serif; color: #9aafb0; opacity: .8; }
+.tool-grid button[data-tool="protect"] svg { color: #91c4ed; }
+.tool-grid button[data-tool="favor"] svg { color: #d6b5ed; }
+.tool-grid button[data-tool="feed"] svg { color: #e8cb8b; }
+.tool-grid button[data-tool="cleanse"] svg { color: #8ddcdb; }
+.tool-grid button[data-tool="disaster"][aria-pressed="true"] { background: #49312e; border-color: #f09e88; color: #f4c4b5; }
+.tool-grid button[data-tool="cleanse"][aria-pressed="true"] { background: #1d4248; border-color: #8ddcdb; }
+.tool-grid button[data-tool="protect"][aria-pressed="true"] { background: #20394b; border-color: #91c4ed; }
+.tool-grid button[data-tool="feed"][aria-pressed="true"] { background: #3e3a2c; border-color: #e8cb8b; }
+.tool-grid button[data-tool="favor"][aria-pressed="true"] { background: #373448; border-color: #d6b5ed; }
+.tool-controls { margin-top: 13px; padding: 11px; background: #0c222d; border: 1px solid var(--tool-color); border-radius: 9px; }
+.tool-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--tool-color); font-size: 12px; }
+.tool-cancel { padding: 0; min-height: 25px; width: 25px; font-size: 19px; border: 0; background: transparent; color: #c5d9d4; }
+.tool-description { font-size: 10px; color: #b0c4c5; line-height: 1.6; margin: 5px 0 12px; }
+.radius-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; gap: 8px; }
+.radius-label label { display: block; font-size: 10px; }
+.radius-label label span { font-size: 9px; color: #7d9da6; }
+.radius-label output { font-size: 12px; color: var(--tool-color); font-variant-numeric: tabular-nums; }
+#toolRadius { display: block; padding: 0; height: 17px; accent-color: var(--tool-color); border: 0; cursor: pointer; }
+.radius-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 7px; }
+.radius-presets button { padding: 3px; min-height: 29px; font-size: 9px; background: #17333e; }
+.radius-presets button[aria-pressed="true"] { border-color: var(--tool-color); color: var(--tool-color); }
+.repeat-power { display: flex; gap: 7px; align-items: center; font-size: 10px; margin-top: 10px; cursor: pointer; min-height: 25px; }
+.repeat-power input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+.favor-options { display: grid; gap: 6px; margin: 10px 0 12px; }
+.favor-options label { font-size: 10px; }
+.favor-options select { font-size: 11px; padding: 7px; }
+.power-hint { font-size: 10px; line-height: 1.6; margin-top: 11px; }
+.environment-settings { border-top: 1px solid var(--line); margin-top: 15px; padding-top: 12px; }
+.environment-settings summary { display: flex; align-items: center; gap: 9px; color: #c0d3cf; font-size: 12px; min-height: 28px; cursor: pointer; list-style: none; }
+.environment-settings summary::-webkit-details-marker { display: none; }
+.environment-settings summary > span { margin-left: auto; color: #8da8ab; }
+.environment-settings summary svg { width: 16px; height: 16px; color: #8ab9ae; }
+.environment-settings[open] #envControls { margin: 17px 0 4px; gap: 14px; }
+.power-dock { position: fixed; left: 50%; bottom: 127px; transform: translateX(-50%); z-index: 2; display: flex; align-items: center; gap: 16px; padding: 11px 13px; background: #102632; border: 1px solid var(--tool-color); border-radius: 10px; max-width: min(390px, calc(100vw - 32px)); box-shadow: 0 5px 22px #0003; }
+.power-dock > div { display: grid; gap: 3px; min-width: 0; }
+.power-dock .eyebrow { color: var(--tool-color); font-size: 7px; letter-spacing: 1px; }
+.power-dock b { font-size: 14px; color: #dbe9df; font-weight: 500; }
+.power-dock #toolTargets { font-size: 9px; color: #a8c4c3; line-height: 1.5; }
+.power-dock button { font-size: 10px; min-height: 30px; padding: 0 8px; }
+.power-dock button span { font-size: 17px; }
+#world.targeting { cursor: crosshair; }
+.tool-active .camera-hint { display: none; }
+@media (max-width: 1100px) {
+  .tool-grid button { padding: 8px 5px; gap: 5px; font-size: 9px; }
+  .tool-grid kbd { display: none; }
+}
+@media (max-height: 720px) and (min-width: 901px) {
+  #environmentPanel .panel-title { margin-bottom: 13px; }
+  #environmentPanel .performance-control { margin-top: 12px; padding-top: 10px; }
+  .tool-controls { margin-top: 10px; padding: 9px; }
+  .tool-description { margin-bottom: 9px; font-size: 9px; }
+  .tool-grid button { min-height: 36px; }
+}
+@media (max-width: 620px) {
+  .power-dock { bottom: 137px; gap: 8px; padding: 9px 11px; }
+  .power-dock b { font-size: 12px; }
+}
+
+@media (min-width: 621px) and (max-width: 900px) {
+  .power-dock { left: auto; right: 18px; transform: none; bottom: 150px; max-width: calc(100vw - 289px); }
+}
+@media (max-width: 620px) {
+  .left-panel:not(.collapsed) ~ .power-dock { display: none; }
+}

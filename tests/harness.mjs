@@ -14,7 +14,7 @@ export function createGame({ baseline = false, fetch: fetchImpl, storage } = {})
     if (elements.has(id)) return elements.get(id);
     const classes = new Set();
     const el = {id, value: ({setupProducers: '1', setupHerbivores: '1', setupCarnivores: '1', setupSize: '3600', setupChaos: '0.55', setupMutation: '0.09', setupQuality: 'eco'})[id] ?? '', textContent: '', innerHTML: '', disabled: false,
-      dataset: {}, style: {}, children: [],
+      dataset: {}, style: {setProperty() {}}, children: [],
       classList: {add(...names) {names.forEach(n => classes.add(n));}, remove(...names) {names.forEach(n => classes.delete(n));}, contains(n) {return classes.has(n);}, toggle(n, force) {const on = force ?? !classes.has(n); on ? classes.add(n) : classes.delete(n); return on;}},
       getContext: () => canvasContext,
       addEventListener(name, fn) {listeners.set(`${id}:${name}`, fn);},
@@ -40,7 +40,9 @@ export function createGame({ baseline = false, fetch: fetchImpl, storage } = {})
   sandbox.window = sandbox;
   sandbox.addEventListener = (name, fn) => listeners.set(`window:${name}`, fn);
   const context = vm.createContext(sandbox);
-  if (!baseline && fs.existsSync('spatial-grid.js')) vm.runInContext(fs.readFileSync('spatial-grid.js', 'utf8'), context);
+  if (!baseline) for (const file of ['spatial-grid.js', 'powers.js']) {
+    if (fs.existsSync(file)) vm.runInContext(fs.readFileSync(file, 'utf8'), context);
+  }
   const source = baseline ? execFileSync('git', ['show', 'origin/main:app.js'], {encoding: 'utf8'}) : fs.readFileSync('app.js', 'utf8');
   vm.runInContext(source, context, {filename: 'app.js'});
   return {run: code => vm.runInContext(code, context), context, elements, listeners, values, element};

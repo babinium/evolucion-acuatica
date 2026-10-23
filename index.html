@@ -37,6 +37,8 @@
       <symbol id="i-bolt" viewBox="0 0 24 24">
         <path d="m13 2-9 12h7l-1 8 10-13h-7Z"/>
       </symbol>
+      <symbol id="i-food" viewBox="0 0 24 24"><path d="M5 4v7m3-7v7m-6-7v7c0 2 6 2 6 0M5 13v8m13-17c-5 3-5 9 0 10V4Zm0 10v7"/></symbol>
+      <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3C9 7 5 11 5 15a7 7 0 0 0 14 0c0-4-4-8-7-12Z"/><path d="m9 15 2 2 4-4"/></symbol>
     </svg>
     <main id="app">
       <canvas id="world" aria-label="Ecosistema acuático. Arrastrá para explorar y hacé clic en un individuo para inspeccionarlo.">
@@ -333,7 +335,7 @@
           </div>
         </div>
         <nav class="main-actions" aria-label="Controles del mundo">
-          <button id="toggleEnvironment" class="icon-button" aria-label="Mostrar u ocultar ambiente" aria-expanded="true" title="Ambiente">
+          <button id="toggleEnvironment" class="icon-button" aria-label="Mostrar u ocultar poderes y ambiente" aria-expanded="true" title="Poderes y ambiente">
             <svg>
               <use href="#i-sliders"/>
             </svg>
@@ -367,79 +369,37 @@
           </details>
         </nav>
       </header>
-      <aside id="environmentPanel" class="left-panel panel hud" aria-label="Ambiente e intervenciones">
+      <aside id="environmentPanel" class="left-panel panel hud" aria-label="Poderes, ambiente e intervenciones">
         <div class="panel-title">
-          <div>
-            <p class="eyebrow">
-              EL EQUILIBRIO DEL AGUA
-            </p>
-            <h2>
-              Ambiente
-            </h2>
-          </div>
-          <svg>
-            <use href="#i-sliders"/>
-          </svg>
-        </div>
-        <div id="envControls">
+          <div><p class="eyebrow">CAMBIÁ EL RUMBO DE LA VIDA</p><h2>Intervenir</h2></div>
+          <svg aria-hidden="true"><use href="#i-bolt"/></svg>
         </div>
         <div class="interventions">
-          <div class="panel-section-heading">
-            <h2>
-              Intervení en el mundo
-            </h2>
-            <span>
-              4 acciones
-            </span>
+          <div class="panel-section-heading"><h2>Elegí un poder</h2><span>Teclas 1–6</span></div>
+          <div class="tool-grid" aria-label="Poderes del mundo">
+            <button data-tool="nutrientBloom" aria-pressed="false" aria-keyshortcuts="1" title="Floración (1): crea algas para los herbívoros."><svg aria-hidden="true"><use href="#i-leaf"/></svg><span>Floración</span><kbd aria-hidden="true">1</kbd></button>
+            <button data-tool="protect" aria-pressed="false" aria-keyshortcuts="2" title="Proteger (2): refugio contra ataques y daño ambiental durante 80 s de simulación."><svg aria-hidden="true"><use href="#i-shield"/></svg><span>Proteger</span><kbd aria-hidden="true">2</kbd></button>
+            <button data-tool="disaster" aria-pressed="false" aria-keyshortcuts="3" title="Catástrofe (3): quita 60 de salud a los individuos sin protección."><svg aria-hidden="true"><use href="#i-bolt"/></svg><span>Catástrofe</span><kbd aria-hidden="true">3</kbd></button>
+            <button data-tool="favor" aria-pressed="false" aria-keyshortcuts="4" title="Favorecer (4): elegí una especie y agregá individuos."><svg aria-hidden="true"><use href="#i-plus"/></svg><span>Favorecer</span><kbd aria-hidden="true">4</kbd></button>
+            <button data-tool="feed" aria-pressed="false" aria-keyshortcuts="5" title="Alimentar (5): da hasta 45 de energía a herbívoros y carnívoros."><svg aria-hidden="true"><use href="#i-food"/></svg><span>Alimentar</span><kbd aria-hidden="true">5</kbd></button>
+            <button data-tool="cleanse" aria-pressed="false" aria-keyshortcuts="6" title="Limpiar agua (6): mejora oxígeno y toxicidad dentro del área durante 60 s de simulación."><svg aria-hidden="true"><use href="#i-drop"/></svg><span>Limpiar agua</span><kbd aria-hidden="true">6</kbd></button>
           </div>
-          <div class="tool-grid">
-            <button data-tool="nutrientBloom" aria-pressed="false" title="Crea nutrientes y alimento en el área.">
-              <svg>
-                <use href="#i-leaf"/>
-              </svg>
-              Floración
-            </button>
-            <button data-tool="protect" aria-pressed="false" title="Protege temporalmente a los individuos del área.">
-              <svg>
-                <use href="#i-shield"/>
-              </svg>
-              Proteger
-            </button>
-            <button data-tool="disaster" aria-pressed="false" title="Daña individuos del área para probar su resiliencia.">
-              <svg>
-                <use href="#i-bolt"/>
-              </svg>
-              Catástrofe
-            </button>
-            <button data-tool="favor" aria-pressed="false" title="Crea individuos de la especie seleccionada.">
-              <svg>
-                <use href="#i-plus"/>
-              </svg>
-              Favorecer
-            </button>
-          </div>
-          <p id="toolHint" class="hint">
-            Elegí una acción y hacé clic en el agua. Esc para cancelar.
-          </p>
+          <section id="toolControls" class="tool-controls hidden" aria-label="Ajustes del poder activo">
+            <div class="tool-heading"><b id="toolName">Proteger</b><button id="cancelTool" class="tool-cancel" aria-label="Cancelar poder" title="Cancelar poder (Esc)">×</button></div>
+            <p id="toolDescription" class="tool-description"></p>
+            <div id="favorOptions" class="favor-options hidden"><label for="favorSpecies">Especie a favorecer</label><select id="favorSpecies"></select></div>
+            <div class="radius-label"><label for="toolRadius">Tamaño del área <span>(radio)</span></label><output id="toolRadiusValue" for="toolRadius">220</output></div>
+            <input id="toolRadius" type="range" min="60" max="650" step="10" value="220" />
+            <div class="radius-presets" aria-label="Tamaños de área"><button data-radius="90" aria-pressed="false">Pequeña</button><button data-radius="220" aria-pressed="false">Media</button><button data-radius="380" aria-pressed="false">Grande</button></div>
+            <label class="repeat-power"><input id="toolRepeat" type="checkbox" checked />Mantener poder activo</label>
+          </section>
+          <p id="toolHint" class="hint power-hint" role="status">Elegí un poder o usá las teclas 1–6. Podés intervenir también en pausa.</p>
         </div>
+        <details class="environment-settings"><summary><svg aria-hidden="true"><use href="#i-sliders"/></svg>Ambiente<span aria-hidden="true">⌄</span></summary><div id="envControls"></div></details>
         <div class="performance-control">
-          <label for="qualitySelect">
-            Calidad visual
-          </label>
-          <select id="qualitySelect">
-            <option value="eco">
-              Bajo consumo
-            </option>
-            <option value="balanced">
-              Equilibrado
-            </option>
-            <option value="quality">
-              Más detalle
-            </option>
-          </select>
-          <span id="performanceStat">
-            30 FPS máx.
-          </span>
+          <label for="qualitySelect">Calidad visual</label>
+          <select id="qualitySelect"><option value="eco">Bajo consumo</option><option value="balanced">Equilibrado</option><option value="quality">Más detalle</option></select>
+          <span id="performanceStat">30 FPS máx.</span>
         </div>
       </aside>
       <aside id="ecosystemPanel" class="right-panel panel hud" aria-label="Especies del ecosistema">
@@ -506,6 +466,10 @@
           </svg>
         </button>
       </div>
+      <aside id="powerDock" class="power-dock hud hidden" aria-label="Poder activo en el mapa">
+        <div><span class="eyebrow">PODER ACTIVO · CLIC PARA APLICAR</span><b id="dockToolName">Proteger</b><span id="toolTargets">Mové el cursor al agua para ver el alcance.</span></div>
+        <button id="dockCancelTool" aria-label="Desactivar poder y volver a explorar" title="Desactivar (Esc o clic derecho)">Esc <span aria-hidden="true">×</span></button>
+      </aside>
       <p class="camera-hint hud">
         Arrastrá para explorar
         <span>
@@ -635,6 +599,7 @@
     </main>
     <script src="spatial-grid.js">
     </script>
+    <script src="powers.js"></script>
     <script src="app.js">
     </script>
   </body>
