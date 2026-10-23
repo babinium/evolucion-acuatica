@@ -119,7 +119,7 @@ Obtené la clave en [Google AI Studio](https://aistudio.google.com/apikey). El p
 
 En **Crear con inteligencia artificial**, el botón **Comprobar conexión con Google** consulta los metadatos de ambos modelos sin generar contenido ni imágenes. Confirma clave, permisos y disponibilidad; la cuota y la facturación de imágenes se comprueban al generar. La detección inicial de configuración solo comprueba si existe una clave.
 
-**Crear con imágenes** solicita las especies y luego una sola ilustración por especie, en serie. El mapa y la ficha usan esa misma ilustración, evitando diferencias de aspecto y una segunda generación de pago. **Solo especies** usa dibujos locales. El editor de especies también permite elegir entre imágenes de Google y dibujos locales. Una partida inicial con una especie de cada grupo solicita tres ilustraciones, además del texto de especies.
+**Crear con imágenes** reutiliza las especies ya guardadas cuando coinciden los ajustes. La casilla **Reutilizar especies anteriores** está activada por defecto; desmarcarla pide especies nuevas y consume cuota. Cada descripción de imagen idéntica reutiliza siempre su ilustración guardada. Las generaciones necesarias se hacen en serie. El mapa y la ficha usan esa misma ilustración, evitando diferencias de aspecto y una segunda generación de pago. **Solo especies** usa dibujos locales. El editor de especies también permite elegir entre imágenes de Google y dibujos locales. La primera creación con una especie de cada grupo necesita como máximo una respuesta de texto y tres ilustraciones. Repetirla con los mismos ajustes reutiliza los resultados disponibles sin otra generación.
 
 ### Preparación y dibujo de imágenes
 
@@ -131,7 +131,18 @@ En **Crear con inteligencia artificial**, el botón **Comprobar conexión con Go
 - Al seleccionar un individuo o una especie se abre su ficha y se muestra la ilustración; **Ver todas las especies** vuelve a la lista sin desplazar el mundo.
 - Las partidas anteriores con fondo azul, blanco o transparencia siguen usando el procesamiento al cargar sus sprites. Las ilustraciones antiguas siguen disponibles en sus fichas.
 
-Los errores temporales HTTP 429/500/502/503/504 se reintentan hasta tres veces en el servidor. Un fallo de credenciales o modelo detiene las imágenes restantes; lo mismo ocurre si se agotan los reintentos por cuota o indisponibilidad. Los bloqueos de contenido, datos inválidos y fallos de recorte no vuelven a generar automáticamente una imagen. Si fallan imágenes, el mundo conserva las especies y usa dibujos locales donde haga falta; el aviso explica el resultado. Si falla el texto de especies o no coincide la cantidad por dieta, no se solicitan imágenes.
+### Consumo de API y protección de claves
+
+- Cada acción envía **como máximo una solicitud de generación por respuesta que falta**. No hay reenvíos automáticos ante errores, cortes o esperas agotadas: se evita repetir una operación cuyo procesamiento pudo empezar en Google. El jugador decide si vuelve a intentar.
+- Texto: instrucciones compactas, solo los campos utilizados, una respuesta y un límite de `256 + 320 × número de especies` tokens de salida (máximo 4.096). Se pide pensamiento mínimo a los modelos Flash-Lite compatibles. No significa que el pensamiento sea necesariamente cero.
+- Imágenes: una ilustración, resolución configurada de 512 px, sin búsquedas ni herramientas, respuesta solo de imagen y límite de 4.096 tokens de salida. En los modelos compatibles se pide el nivel de pensamiento más bajo admitido. El límite es un techo, no un consumo fijo.
+- La carpeta local `.ai-cache/` conserva respuestas e imágenes válidas entre reinicios; Python y Node pueden reutilizarlas al cambiar de servidor. Se distinguen modelo, instrucciones y ajustes; los cambios relevantes producen otra entrada. Peticiones simultáneas idénticas al mismo servidor comparten una generación. La caché no contiene claves ni cabeceras y tiene un límite de 128 respuestas y 64 MiB; al llenarse elimina las menos recientes. Las imágenes preparadas que ya estén en una partida siguen allí.
+- Simular, evolucionar, usar poderes, reiniciar y cargar una partida no generan contenido ni consumen tokens de Google. El recorte y las fichas se calculan localmente.
+- La API rechaza acciones enviadas desde otros sitios. La configuración, sus variantes de respaldo, `.env`, la caché y los archivos ocultos no se sirven por HTTP, incluidos los accesos mediante enlaces simbólicos.
+- Git ignora la configuración local, sus respaldos, `.env` y la caché. `python3 scripts/check-secrets.py --history` revisa archivos versionados e historial sin mostrar los valores. Los hooks de este equipo bloquean commits y pushes con credenciales detectadas o archivos privados. En un clon nuevo se activan con `git config core.hooksPath .githooks`.
+
+Si fallan imágenes, el mundo conserva las especies y usa dibujos locales donde haga falta; el aviso y la ficha explican el resultado. Si falla el texto de especies o no coincide la cantidad por dieta, no se solicitan imágenes. Los datos inválidos y fallos de recorte no provocan otra generación automática.
+
 
 Para comprobar visualmente el recorrido sin clave ni créditos, ejecutá `python3 tests/preview_images.py` y abrí [la prueba aislada](http://127.0.0.1:5174). Usa imágenes **sintéticas**, muestra un aviso permanente y bloquea las conexiones con proveedores. Su puerto separado evita sobrescribir la partida del juego normal. Esta prueba no confirma la calidad artística de Google ni una cuota real: eso requiere generar con tu clave.
 

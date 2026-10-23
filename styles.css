@@ -467,6 +467,22 @@ h1 em {
   margin-top: 6px;
 }
 
+.ai-cache-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.ai-cache-option input {
+  width: 14px;
+  height: 14px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
 .status {
   font-size: 10px;
   line-height: 1.6;

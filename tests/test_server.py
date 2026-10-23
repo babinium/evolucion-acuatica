@@ -3,6 +3,8 @@ from unittest.mock import patch, MagicMock
 import sys
 import json
 import threading
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -15,6 +17,10 @@ def image_response(parts=None):
 
 class ApiContractTests(unittest.TestCase):
     def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix="evo-api-test-")
+        self.addCleanup(temporary.cleanup)
+        cache=patch.object(server,"generation_cache",server.GenerationCache(temporary.name))
+        cache.start();self.addCleanup(cache.stop)
         self.config = patch.dict(server.CONFIG, {'geminiApiKey': 'test-key'}, clear=True)
         self.config.start()
         self.addCleanup(self.config.stop)
@@ -36,7 +42,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertTrue(url.endswith('/test-image-model:generateContent'))
         self.assertNotIn('test-key', url)
         self.assertEqual(headers['x-goog-api-key'], 'test-key')
-        self.assertEqual(payload['generationConfig'], {'responseModalities': ['IMAGE'], 'imageConfig': {'aspectRatio': '1:1', 'imageSize': '512'}})
+        self.assertEqual(payload['generationConfig'], {'responseModalities': ['IMAGE'], 'candidateCount': 1, 'maxOutputTokens': 4096, 'imageConfig': {'aspectRatio': '1:1', 'imageSize': '512'}})
         self.assertIn('#ff00ff', payload['contents'][0]['parts'][0]['text'])
         self.assertIn('TOP-DOWN', payload['contents'][0]['parts'][0]['text'])
         self.assertEqual(post.call_args.kwargs['timeout'], 90)
@@ -50,7 +56,7 @@ class ApiContractTests(unittest.TestCase):
         for data in [{'promptFeedback': {'blockReason': 'SAFETY'}}, image_response([]), image_response([{'inlineData': {'mimeType': 'image/png', 'data': 'aGVsbG8='}}])]:
             with patch.object(server, 'post_json', return_value=(200, data)) as post:
                 with self.assertRaises(server.ApiError) as error:
-                    server.generate_image_with_retry('fish')
+                    server.generate_image('fish')
                 self.assertEqual(error.exception.status, 422)
                 self.assertEqual(post.call_count, 1)
 
@@ -80,6 +86,17 @@ class ApiContractTests(unittest.TestCase):
         self.assertNotIn('test-key', str(error.exception))
         self.assertIn('permisos', str(error.exception))
 
+    def test_zero_quota_is_short_and_actionable(self):
+        data={'error': {'message': 'generate_content_free_tier_requests, limit: 0, test-key'}}
+        with patch.object(server, 'post_json', return_value=(429, data)) as post:
+            with self.assertRaises(server.ApiError) as error:
+                server.generate_image('fish')
+            self.assertIn('cuota 0', str(error.exception))
+            self.assertIn('mismo proyecto', str(error.exception))
+            self.assertLess(len(str(error.exception)), 250)
+            self.assertNotIn('test-key', str(error.exception))
+            self.assertEqual(post.call_count, 1)
+
     def test_empty_and_wrong_diet_species_are_errors(self):
         for species in [[], [{'name': 'Pez', 'class': 'herbivore'}]]:
             data = {'candidates': [{'content': {'parts': [{'text': json.dumps({'species': species})}]}}]}
@@ -96,21 +113,48 @@ class ApiContractTests(unittest.TestCase):
         self.assertNotIn('?key=', post.call_args.args[0])
         self.assertEqual(post.call_args.args[2]['x-goog-api-key'], 'test-key')
 
-class RetryTests(unittest.TestCase):
-    def test_transient_and_permanent_errors(self):
-        calls, waits = [], []
-        def transient():
-            calls.append(1)
-            if len(calls) < 3:
-                raise server.ApiError('rate limit', 429)
-            return 'ok'
-        self.assertEqual(server.retry_request(transient, sleep=waits.append), 'ok')
-        self.assertEqual(waits, [1.5, 3.0])
-        with self.assertRaises(server.ApiError):
-            server.retry_request(lambda: (_ for _ in ()).throw(server.ApiError('key', 401)), sleep=lambda _: self.fail('should not retry'))
+    def test_generation_failures_do_not_retry_paid_operations(self):
+        for status in (429, 500, 502, 503, 504):
+            with patch.object(server, 'post_json', return_value=(status, {'error': {'message': 'temporary'}})) as post:
+                with self.assertRaises(server.ApiError) as error:
+                    server.generate_image('fish')
+                self.assertEqual(error.exception.status, status)
+                self.assertEqual(post.call_count, 1)
+
+    def test_images_are_reused_across_concurrent_requests_and_a_restart(self):
+        with patch.object(server, 'post_json', return_value=(200, image_response())) as post:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                images = list(pool.map(lambda _: server.generate_image('same fish'), range(4)))
+            self.assertEqual(post.call_count, 1)
+            self.assertEqual(len(set(images)), 1)
+            directory = server.generation_cache.directory
+            server.generation_cache = server.GenerationCache(directory)
+            self.assertEqual(server.generate_image('same fish'), images[0])
+            self.assertEqual(post.call_count, 1)
+        record = next(directory.glob('*.json')).read_text()
+        self.assertNotIn('test-key', record)
+        self.assertNotIn('x-goog-api-key', record)
+
+    def test_species_are_cached_and_new_generation_is_explicit(self):
+        data = {'candidates': [{'content': {'parts': [{'text': '{"species":[{"name":"Alga","class":"producer"}]}'}]}}]}
+        with patch.object(server, 'post_json', return_value=(200, data)) as post:
+            server.generate_species({'producers': 1})
+            server.generate_species({'producers': 1})
+            self.assertEqual(post.call_count, 1)
+            payload = post.call_args.args[1]
+            self.assertEqual(payload['generationConfig']['maxOutputTokens'], 576)
+            self.assertEqual(payload['generationConfig']['thinkingConfig']['thinkingLevel'], 'MINIMAL')
+            server.generate_species({'producers': 1, 'fresh': True})
+            self.assertEqual(post.call_count, 2)
 
 
 class HttpContractTests(unittest.TestCase):
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix="evo-http-test-")
+        self.addCleanup(temporary.cleanup)
+        cache=patch.object(server,"generation_cache",server.GenerationCache(temporary.name))
+        cache.start();self.addCleanup(cache.stop)
+
     def test_python_routes_return_one_image_and_protect_configuration(self):
         class QuietHandler(server.Handler):
             def log_message(self, *args):
@@ -125,14 +169,32 @@ class HttpContractTests(unittest.TestCase):
                     status = response.read().decode()
                 self.assertNotIn('test-key', status)
                 self.assertTrue(json.loads(status)['canUseAiImages'])
-                for path in ('/config.local.json', '/.git/config'):
+                for path in ('/config.local.json', '/config.local.example.json', '/config.local.backup.json', '/.env', '/.ai-cache/private.json', '/.git/config'):
                     with self.assertRaises(urllib.error.HTTPError) as error:
                         urllib.request.urlopen(base + path)
                     self.assertEqual(error.exception.code, 403)
+                private_root=server.ROOT/'.local-tools'
+                private_root.mkdir(exist_ok=True)
+                with tempfile.TemporaryDirectory(dir=private_root,prefix='privacy-') as directory:
+                    target=Path(directory)/'secret.json'
+                    target.write_text('{"fixture":true}')
+                    alias=server.ROOT/('public-'+Path(directory).name+'.json')
+                    try:
+                        alias.symlink_to(target)
+                        with self.assertRaises(urllib.error.HTTPError) as error:
+                            urllib.request.urlopen(base+'/'+alias.name)
+                        self.assertEqual(error.exception.code,403)
+                    finally:
+                        alias.unlink(missing_ok=True)
                 with patch.object(server, 'post_json', return_value=(200, image_response())) as post:
                     req = urllib.request.Request(base + '/api/generate-images', data=b'{"prompt":"fish"}', headers={'Content-Type': 'application/json'})
                     with urllib.request.urlopen(req) as response:
                         self.assertEqual(json.loads(response.read()), {'image': f'data:image/png;base64,{PNG}'})
+                    self.assertEqual(post.call_count, 1)
+                    foreign = urllib.request.Request(base + '/api/generate-images', data=b'{"prompt":"new fish"}', headers={'Origin': 'https://foreign.invalid'})
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(foreign)
+                    self.assertEqual(error.exception.code, 403)
                     self.assertEqual(post.call_count, 1)
                     bad = urllib.request.Request(base + '/api/generate-images', data=b'{"prompts":[]}', headers={'Content-Type': 'application/json'})
                     with self.assertRaises(urllib.error.HTTPError) as error:

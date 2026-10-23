@@ -194,7 +194,7 @@ async function loadConfigStatus() {
   updateManualSpeciesCounter();
 }
 
-async function requestApi(path, body, timeout = 200000) {
+async function requestApi(path, body, timeout = 70000) {
   let response;
   try {
     response = await fetch(path, {
@@ -464,7 +464,8 @@ async function startWorld(useAI, withImages = true) {
     setupStatus.textContent = "Generando especies con Gemini...";
     state.aiCalls++;
     const data = await requestApi("/api/generate-species", {
-      producers, herbivores, carnivores, world: { chaos: state.chaos, mutationRate: state.mutationRate }
+      producers, herbivores, carnivores, world: { chaos: state.chaos, mutationRate: state.mutationRate },
+      fresh: document.getElementById("reuseAiSpecies").checked === false
     });
     if (!Array.isArray(data.species) || !data.species.length) throw new Error("La IA no devolvió especies válidas.");
     const species = data.species.slice(0, 12).map(normalizeSpecies);
@@ -503,8 +504,8 @@ async function addSpeciesArtwork(species, statusEl) {
   statusEl.textContent = `Creando ilustración de ${species.name}…`;
   state.aiCalls++;
   const data = await requestApi("/api/generate-images", {
-    prompt: `${species.name}. ${species.visualDescription}. ${species.spritePrompt}. Species type: ${species.class}.`
-  }, 290000);
+    prompt: `${species.visualDescription || species.spritePrompt || species.name}. Species type: ${species.class}.`
+  }, 105000);
   if (!data.image) throw new Error("Google no devolvió una ilustración.");
   statusEl.textContent = `Recortando y preparando ${species.name}…`;
   updateBusy(statusEl.textContent);

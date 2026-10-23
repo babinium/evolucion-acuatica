@@ -8,7 +8,9 @@ import binascii
 import mimetypes
 import urllib.request
 import urllib.error
-import time
+import math
+import re
+from generation_cache import GenerationCache, canonical_json
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.local.json"
@@ -16,6 +18,8 @@ MAX_SPECIES_PER_TYPE = 4
 MAX_SPECIES_PER_REQUEST = MAX_SPECIES_PER_TYPE * 3
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 GOOGLE_API = "https://generativelanguage.googleapis.com/v1beta/models/"
+PROMPTS = json.loads((ROOT / "generation-prompts.json").read_text())
+generation_cache = GenerationCache(ROOT / ".ai-cache")
 
 if CONFIG_PATH.exists():
     CONFIG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
@@ -72,64 +76,36 @@ def post_json(url, payload, headers=None, timeout=60):
         return 504, {"error": {"message": "No se pudo conectar o se agotó el tiempo de espera."}}
 
 
+def normalized_world(body):
+    world = body.get("world") or {}
+    def per_thousand(value, fallback):
+        try:
+            number = float(fallback if value is None else value)
+            if not math.isfinite(number):
+                number = fallback
+            return math.floor(max(0, min(1, number)) * 1000 + 0.5)
+        except (ValueError, TypeError):
+            return math.floor(fallback * 1000 + 0.5)
+    return {"chaos": per_thousand(world.get("chaos"), 0.55), "mutationRate": per_thousand(world.get("mutationRate"), 0.09)}
+
+
 def build_species_prompt(body):
-    producers = clamp_count(body.get("producers", 0))
-    herbivores = clamp_count(body.get("herbivores", 0))
-    carnivores = clamp_count(body.get("carnivores", 0))
-    total = producers + herbivores + carnivores
-    world = json.dumps(body.get("world", {}), ensure_ascii=False)
-    return f"""
-Create {total} original aquatic ecosystem species for a survival/evolution simulation.
-Counts: {producers} producers, {herbivores} herbivores, {carnivores} carnivores.
-World settings: {world}
+    counts = f"{clamp_count(body.get('producers', 0))} producer, {clamp_count(body.get('herbivores', 0))} herbivore, {clamp_count(body.get('carnivores', 0))} carnivore"
+    return PROMPTS["species"].replace("$COUNTS", counts).replace("$WORLD", canonical_json(normalized_world(body)))
 
-Return ONLY valid JSON, no markdown. Use this schema:
-{{
-  "species": [
-    {{
-      "name": "Spanish common/species name",
-      "class": "producer|herbivore|carnivore",
-      "description": "short biological description in Spanish",
-      "visualDescription": "short visual description in Spanish",
-      "diet": "what it eats in Spanish",
-      "habitat": "preferred aquatic zone in Spanish",
-      "behavior": "short behavior in Spanish",
-      "strengths": ["Spanish text"],
-      "weaknesses": ["Spanish text"],
-      "traits": {{
-        "size": 1-10,
-        "speed": "producers 0, herbivores 1-10, carnivores 6-10",
-        "attack": 0-10,
-        "defense": 0-10,
-        "perception": 1-10,
-        "fertility": "producers 10-30, herbivores/carnivores 5-20",
-        "metabolism": 1-10,
-        "foodEfficiency": 1-10,
-        "toxicity": 0-10
-      }},
-      "spritePrompt": "English description of this species' body, colors, fins and distinctive features. A single top-down game creature, head right. Do not describe a background."
-    }}
-  ]
-}}
 
-Balance rules:
-- Producers have attack 0 and speed 0; they are anchored and use light plus shared local nutrients.
-- Producers should start with fertility between 10 and 30.
-- Herbivores and carnivores should start with fertility between 5 and 20.
-- Producers may have high fertility too; the game limits them by local crowding and energy.
-- Herbivores have attack 0, can have defense, speed, perception, toxicity.
-- Carnivores can eat herbivores and other carnivores; attack, speed, size and perception matter.
-- Carnivores must start fast enough to hunt: speed should be between 6 and 10.
-- Bigger size increases health and energy reserves, costs upkeep and reduces agility. Metabolism is a separate tradeoff.
-- High metabolism accelerates activity and digestion/photosynthesis but increases energy and oxygen demand and aging.
-- Perception extends animal senses and improves nutrient uptake in producers. Carnivores should start with perception 5-9.
-- Efficiency improves assimilation, body toxins poison consumers, and defense reduces damage; all cost energy to maintain.
-- Fertility affects birth opportunities and recovery time. Every baby costs the parent both reserves and edible tissue.
-- High speed, defense, attack, perception, toxicity, or fertility should have tradeoffs. Avoid maximizing every trait.
-- Make species varied, visually memorable, and mechanically fair.
-- Sprite prompt must say the creature is viewed from above and its head/front faces exactly to the right.
-- Sprite prompt must describe an opaque filled body, sturdy fins and a clear silhouette, with no background or scenery.
-"""
+def thinking_config(model):
+    if model.startswith("gemini-3") and "flash-lite" in model:
+        return {"thinkingConfig": {"thinkingLevel": "MINIMAL", "includeThoughts": False}}
+    if model.startswith("gemini-3"):
+        return {"thinkingConfig": {"thinkingLevel": "LOW", "includeThoughts": False}}
+    return {}
+
+
+def usage_of(data):
+    usage = data.get("usageMetadata") or {}
+    return {key: usage.get(key) if isinstance(usage.get(key), (int, float)) else None
+            for key in ("promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount", "totalTokenCount")}
 
 
 def extract_json(text):
@@ -146,16 +122,6 @@ class ApiError(RuntimeError):
         self.status = status
 
 
-def retry_request(operation, sleep=None):
-    sleep = sleep or time.sleep
-    for attempt in range(3):
-        try:
-            return operation()
-        except ApiError as error:
-            if attempt == 2 or error.status not in (429, 500, 502, 503, 504):
-                raise
-            sleep(1.5 * 2 ** attempt)
-
 
 def provider_error(provider, status, data):
     error = data.get("error", {})
@@ -165,6 +131,10 @@ def provider_error(provider, status, data):
 
 def google_error(status, message):
     safe = str(message).replace(CONFIG.get("geminiApiKey") or "\x00", "[clave oculta]")[:800]
+    if status == 429:
+        if "free_tier" in safe.lower() and re.search(r"limit:\s*0", safe, re.I):
+            return "Google HTTP 429: este modelo tiene cuota 0 en el nivel gratuito del proyecto de esta clave. Revisá la facturación de ese mismo proyecto en Google AI Studio. No se reenvió la solicitud."
+        return "Google HTTP 429: se alcanzó una cuota de solicitudes o tokens. Revisá los límites, el saldo y la facturación del proyecto. No se reenvió la solicitud."
     if status == 400:
         help_text = "Revisá la clave, el modelo y su configuración."
     elif status in (401, 403):
@@ -175,7 +145,7 @@ def google_error(status, message):
         help_text = "Revisá la cuota y la facturación del proyecto en Google AI Studio."
     else:
         help_text = "Podés volver a intentar más tarde."
-    return f"Google HTTP {status}: {safe} {help_text}"
+    return f"Google HTTP {status}: {safe[:180]} {help_text}"
 
 
 def require_google_key():
@@ -206,53 +176,40 @@ def check_google():
 
 def generate_species(body):
     require_google_key()
-    key = CONFIG.get("geminiApiKey")
+    total = sum(clamp_count(body.get(key, 0)) for key in ("producers", "herbivores", "carnivores"))
+    if not total:
+        raise ApiError("Elegí al menos una especie.", 400)
     model = CONFIG.get("geminiModel") or "gemini-3.1-flash-lite"
-    url = f"{GOOGLE_API}{quote(model, safe='')}:generateContent"
-
-    def request():
-        status, data = post_json(
-            url,
-            {"contents": [{"parts": [{"text": build_species_prompt(body)}]}],
-             "generationConfig": {"temperature": 0.95, "responseMimeType": "application/json"}},
-            {"x-goog-api-key": key},
-        )
+    payload = {"contents": [{"parts": [{"text": build_species_prompt(body)}]}], "generationConfig": {
+        "temperature": 0.85, "candidateCount": 1, "maxOutputTokens": min(4096, 256 + 320 * total),
+        "responseMimeType": "application/json", **thinking_config(model),
+    }}
+    def generate():
+        status, data = post_json(f"{GOOGLE_API}{quote(model, safe='')}:generateContent", payload, {"x-goog-api-key": CONFIG["geminiApiKey"]})
         if status >= 400:
-            provider_error("Gemini", status, data)
-        return data
-
-    data = retry_request(request)
-    candidates = data.get("candidates") or [{}]
-    parts = candidates[0].get("content", {}).get("parts", [])
-    text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
-    try:
-        parsed = extract_json(text)
-    except (ValueError, TypeError):
-        raise ApiError("Gemini no devolvió un JSON válido de especies.")
-    species = parsed.get("species", [])
-    if not isinstance(species, list):
-        raise ApiError("Gemini no devolvió especies válidas.")
-    valid = [sp for sp in species if isinstance(sp, dict) and isinstance(sp.get("name"), str)
-             and sp.get("class") in ("producer", "herbivore", "carnivore")][:MAX_SPECIES_PER_REQUEST]
-    if not valid:
-        raise ApiError("Gemini no devolvió especies válidas.")
-    for key, species_class in (("producers", "producer"), ("herbivores", "herbivore"), ("carnivores", "carnivore")):
-        if sum(sp["class"] == species_class for sp in valid) != clamp_count(body.get(key, 0)):
-            raise ApiError("Google devolvió cantidades de especies distintas de las pedidas. No se generaron imágenes.", 422)
-    return valid
+            provider_error("Google", status, data)
+        parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+        text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
+        try:
+            parsed = extract_json(text)
+        except (ValueError, TypeError):
+            raise ApiError("Google no devolvió un JSON válido de especies. No se reenvió la solicitud.", 422)
+        species = parsed.get("species") if isinstance(parsed, dict) else None
+        if not isinstance(species, list):
+            raise ApiError("Google no devolvió especies válidas.", 422)
+        valid = [sp for sp in species if isinstance(sp, dict) and isinstance(sp.get("name"), str)
+                 and sp.get("class") in ("producer", "herbivore", "carnivore")][:MAX_SPECIES_PER_REQUEST]
+        if not valid:
+            raise ApiError("Google no devolvió especies válidas.", 422)
+        for key, species_class in (("producers", "producer"), ("herbivores", "herbivore"), ("carnivores", "carnivore")):
+            if sum(sp["class"] == species_class for sp in valid) != clamp_count(body.get(key, 0)):
+                raise ApiError("Google devolvió cantidades de especies distintas de las pedidas. No se generaron imágenes.", 422)
+        return {"value": valid, "usage": usage_of(data)}
+    return generation_cache.get_or_create("species", {"model": model, "payload": payload}, generate, fresh=body.get("fresh") is True)["value"]
 
 
 def build_image_prompt(prompt):
-    return f"""Create exactly ONE aquatic species illustration for a small 2D ecosystem game.
-Species appearance: {prompt}
-Mandatory asset format (override any conflicting background or framing in the description):
-- Exactly one specimen, orthographic dorsal TOP-DOWN view, not side view, not isometric.
-- Animal head/front points exactly RIGHT, tail/back LEFT. Plants are a compact anchored colony viewed from above.
-- Opaque filled colored body, clear silhouette, readable at 32 pixels; limited detail and sturdy fins.
-- Entire specimen centered, all fins and appendages visible, at least 12% empty margin on every side.
-- Flat perfectly uniform chroma MAGENTA background (#ff00ff). The body must not contain magenta or pink. Blue, cyan and green bodies are allowed.
-- No transparency, checkerboard, gradients, glow, shadows, water, scenery, floor, rocks, props, labels, text, frame, watermark or multiple views.
-- This exact illustration will also be shown enlarged as the species portrait. Return the image only."""
+    return PROMPTS["image"].replace("$APPEARANCE", prompt)
 
 
 def generate_image(prompt):
@@ -265,38 +222,37 @@ def generate_image(prompt):
         raise ApiError("geminiImageSize debe ser 512 o 1K para este juego.", 400)
     payload = {
         "contents": [{"parts": [{"text": build_image_prompt(prompt)}]}],
-        "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "1:1", "imageSize": size}},
+        "generationConfig": {"responseModalities": ["IMAGE"], "candidateCount": 1, "maxOutputTokens": 4096,
+                             "imageConfig": {"aspectRatio": "1:1", "imageSize": size}, **thinking_config(settings["geminiImageModel"])},
     }
-    status, data = post_json(
-        f"{GOOGLE_API}{quote(settings['geminiImageModel'], safe='')}:generateContent", payload,
-        {"x-goog-api-key": CONFIG["geminiApiKey"]}, timeout=90,
-    )
-    if status >= 400:
-        provider_error("Google", status, data)
-    candidate = (data.get("candidates") or [{}])[0]
-    parts = candidate.get("content", {}).get("parts", [])
-    image = next((p["inlineData"] for p in parts if not p.get("thought") and p.get("inlineData", {}).get("mimeType", "").startswith("image/")), None)
-    if not image or image.get("mimeType") not in ("image/png", "image/jpeg", "image/webp"):
-        reason = data.get("promptFeedback", {}).get("blockReason") or candidate.get("finishReason") or "sin imagen"
-        raise ApiError(f"Google no devolvió una imagen utilizable ({reason}). No se repetirá automáticamente.", 422)
-    encoded = image.get("data")
-    try:
-        if not isinstance(encoded, str) or not encoded or len(encoded) > MAX_IMAGE_BYTES * 4 / 3 + 4:
-            raise ValueError()
-        raw = base64.b64decode(encoded, validate=True)
-    except (ValueError, binascii.Error):
-        raise ApiError("Google devolvió datos de imagen inválidos o demasiado grandes.", 422)
-    mime = image["mimeType"]
-    valid = (raw.startswith(b"\x89PNG\r\n\x1a\n") if mime == "image/png" else
-             raw.startswith(b"\xff\xd8\xff") if mime == "image/jpeg" else
-             raw[:4] == b"RIFF" and raw[8:12] == b"WEBP")
-    if not valid:
-        raise ApiError("Google devolvió una imagen con formato inválido.", 422)
-    return f"data:{mime};base64,{encoded}"
-
-
-def generate_image_with_retry(prompt):
-    return retry_request(lambda: generate_image(prompt))
+    def generate():
+        status, data = post_json(
+            f"{GOOGLE_API}{quote(settings['geminiImageModel'], safe='')}:generateContent", payload,
+            {"x-goog-api-key": CONFIG["geminiApiKey"]}, timeout=90,
+        )
+        if status >= 400:
+            provider_error("Google", status, data)
+        candidate = (data.get("candidates") or [{}])[0]
+        parts = candidate.get("content", {}).get("parts", [])
+        image = next((p["inlineData"] for p in parts if not p.get("thought") and p.get("inlineData", {}).get("mimeType", "").startswith("image/")), None)
+        if not image or image.get("mimeType") not in ("image/png", "image/jpeg", "image/webp"):
+            reason = data.get("promptFeedback", {}).get("blockReason") or candidate.get("finishReason") or "sin imagen"
+            raise ApiError(f"Google no devolvió una imagen utilizable ({reason}). No se repetirá automáticamente.", 422)
+        encoded = image.get("data")
+        try:
+            if not isinstance(encoded, str) or not encoded or len(encoded) > MAX_IMAGE_BYTES * 4 / 3 + 4:
+                raise ValueError()
+            raw = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error):
+            raise ApiError("Google devolvió datos de imagen inválidos o demasiado grandes.", 422)
+        mime = image["mimeType"]
+        valid = (raw.startswith(b"\x89PNG\r\n\x1a\n") if mime == "image/png" else
+                 raw.startswith(b"\xff\xd8\xff") if mime == "image/jpeg" else
+                 raw[:4] == b"RIFF" and raw[8:12] == b"WEBP")
+        if not valid:
+            raise ApiError("Google devolvió una imagen con formato inválido.", 422)
+        return {"value": f"data:{mime};base64,{encoded}", "usage": usage_of(data)}
+    return generation_cache.get_or_create("image", {"model": settings["geminiImageModel"], "payload": payload}, generate)["value"]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -316,6 +272,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            host = self.headers.get("Host", "")
+            origin = self.headers.get("Origin")
+            allowed = (f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}")
+            if host not in allowed or self.headers.get("Sec-Fetch-Site") == "cross-site" or (origin and origin != f"http://{host}"):
+                raise ApiError("Las acciones de IA solo se aceptan desde este juego local.", 403)
             body = self._read_json()
             if self.path == "/api/check-google":
                 self._json(200, check_google())
@@ -324,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, {"species": generate_species(body)})
                 return
             if self.path == "/api/generate-images":
-                self._json(200, {"image": generate_image_with_retry(body.get("prompt"))})
+                self._json(200, {"image": generate_image(body.get("prompt"))})
                 return
             self._json(404, {"error": "Unknown API route."})
         except Exception as error:
@@ -340,7 +301,8 @@ class Handler(BaseHTTPRequestHandler):
         if ROOT not in target.parents and target != ROOT:
             self.send_error(403)
             return
-        if target.name == "config.local.json" or any(part.startswith(".") for part in Path(rel).parts):
+        if any(part.startswith(".") or part.lower().startswith("config.local")
+               for part in (*Path(rel).parts, *target.relative_to(ROOT).parts)):
             self.send_error(403)
             return
         if not target.exists() or not target.is_file():
