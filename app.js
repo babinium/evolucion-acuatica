@@ -826,7 +826,7 @@ function updateHud() {
   setText("speciesStat", state.species.filter(s => !s.extinct).length);
   setText("extinctStat", state.extinct);
   setText("eventStat", state.lastEvent);
-  setText("speedLabel", `${state.speed.toFixed(1)}x`);
+  setText("speedLabel", `${state.speed}x`);
   setText("zoomLabel", `${Math.round(state.camera.zoom * 100)}%`);
   setText("mapSizeLabel", `${state.worldSize.toLocaleString("es-AR")} × ${state.worldSize.toLocaleString("es-AR")}`);
   updateToolPreviewStatus();
@@ -1128,9 +1128,13 @@ function syncPauseButton() {
   document.getElementById("liveLabel").textContent = state.paused ? "EN PAUSA" : "EN VIVO";
 }
 function togglePause() { state.paused = !state.paused; syncPauseButton(); invalidate(); }
+function setSimulationSpeed(value) {
+  state.speed = clamp(Math.round(Number(value) || 1), 1, 5);
+  setText("speedLabel", `${state.speed}x`);
+}
 document.getElementById("pauseBtn").addEventListener("click", togglePause);
-document.getElementById("speedDown").addEventListener("click", () => state.speed = clamp(state.speed - 0.25, 0.25, 5));
-document.getElementById("speedUp").addEventListener("click", () => state.speed = clamp(state.speed + 0.25, 0.25, 5));
+document.getElementById("speedDown").addEventListener("click", () => setSimulationSpeed(state.speed - 1));
+document.getElementById("speedUp").addEventListener("click", () => setSimulationSpeed(state.speed + 1));
 document.querySelector(".tool-grid").addEventListener("click", event => {
   const button = event.target.closest("button[data-tool]");
   if (button) selectTool(button.dataset.tool);
@@ -1177,6 +1181,7 @@ function loadWorld() {
     const selectedId = saved.selectedId ?? saved.selected?.id;
     const legacy = saved.ecologyVersion !== ECOLOGY_VERSION;
     Object.assign(state, saved, { started: true, activeTool: null });
+    setSimulationSpeed(state.speed);
     state.creatures = state.creatures.slice(0, MAX_CREATURES);
     state.resources = state.resources.slice(0, MAX_RESOURCES);
     state.corpses = (state.corpses || []).slice(0, MAX_CORPSES);
