@@ -2,7 +2,7 @@
 
 Un simulador de evolución con vista de dios: productores, herbívoros, depredadores, mutaciones e intervenciones. HTML, CSS y JavaScript con canvas, sin dependencias ni compilación.
 
-**Versión estable: [1.0.0](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.0.0).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
+**Versión estable: [1.0.1](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.0.1).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
 
 ## Jugar
 
@@ -34,6 +34,7 @@ Para una partida liviana, empezá con un mundo compacto o mediano y una especie 
 - Clic en un individuo o en la lista de especies: inspeccionar rasgos y población.
 - Clic en el retrato de la ficha: ampliar la ilustración a tres veces su tamaño, ajustada al espacio disponible y sin consumir API. Clic en cualquier lugar o Escape: cerrar la ampliación.
 - Barra espaciadora: pausar o reanudar. Los controles de velocidad no cambian la velocidad de la cámara.
+- Velocidad de la simulación: los botones − y + de la barra superior cambian de 1× en 1×, entre 1× y 5×. Las velocidades fraccionarias de partidas anteriores se redondean al cargar.
 - Ambiente y Especies: mostrar u ocultar paneles en pantallas pequeñas.
 - Intervenciones: teclas 1–6 o botones del panel; clic en el agua para aplicar. Rueda para ajustar el área, Mayús + rueda para zoom y Escape o clic derecho para cancelar.
 - Menú **•••**: guardar, cargar, reiniciar con las mismas especies o empezar un mundo nuevo.
