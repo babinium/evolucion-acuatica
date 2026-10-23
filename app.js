@@ -364,6 +364,7 @@ function initEnvironment() {
 function seedWorld(speciesList) {
   resetEvolutionWork();
   state.species = speciesList.map((sp) => normalizeSpecies({ ...sp, extinct: false, population: 0 }));
+  migrateLineages();
   rebuildSpeciesIndex();
   spriteCache.clear();
   proceduralSprites.clear();
