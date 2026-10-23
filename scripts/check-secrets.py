@@ -9,7 +9,8 @@ import subprocess
 import sys
 
 GOOGLE_KEY = re.compile(rb"AIza[0-9A-Za-z_-]{35}")
-KEY_FIELD = re.compile(rb'''["'](?:geminiApiKey|togetherApiKey|api_key|apiKey)["']\s*:\s*["']([^"'\r\n]{12,})["']''')
+OPENROUTER_KEY = re.compile(rb"sk-or-v1-[0-9A-Za-z_-]{20,}")
+KEY_FIELD = re.compile(rb'''["'](?:geminiApiKey|openrouterApiKey|togetherApiKey|api_key|apiKey)["']\s*:\s*["']([^"'\r\n]{12,})["']''')
 PLACEHOLDER = re.compile(rb"^(?:tu[-_]|your[-_]|test[-_]|fake[-_]|dummy[-_]|pega[_ -]|pon[_ -]|reemplaza[_ -]|paste[_ -]|example|placeholder|synthetic-fixture)", re.I)
 
 
@@ -33,14 +34,15 @@ def local_keys():
                      and isinstance(value, str) and len(value.strip()) >= 12 and not PLACEHOLDER.match(value.encode())]
         except (OSError, ValueError):
             pass
-    key = os.environ.get("GEMINI_API_KEY", "")
-    if len(key) >= 12:
-        keys.append(key.encode())
+    for variable in ("GEMINI_API_KEY", "OPENROUTER_API_KEY"):
+        key = os.environ.get(variable, "")
+        if len(key) >= 12:
+            keys.append(key.encode())
     return keys
 
 
 def has_secret(data, keys):
-    if GOOGLE_KEY.search(data) or any(key in data for key in keys):
+    if GOOGLE_KEY.search(data) or OPENROUTER_KEY.search(data) or any(key in data for key in keys):
         return True
     return any(not PLACEHOLDER.match(match.group(1)) for match in KEY_FIELD.finditer(data))
 

@@ -18,6 +18,7 @@ MAX_SPECIES_PER_TYPE = 4
 MAX_SPECIES_PER_REQUEST = MAX_SPECIES_PER_TYPE * 3
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 GOOGLE_API = "https://generativelanguage.googleapis.com/v1beta/models/"
+OPENROUTER_API = "https://openrouter.ai/api/v1/"
 PROMPTS = json.loads((ROOT / "generation-prompts.json").read_text())
 generation_cache = GenerationCache(ROOT / ".ai-cache")
 
@@ -27,17 +28,28 @@ else:
     CONFIG = {"geminiApiKey": ""}
 if os.environ.get("GEMINI_API_KEY"):
     CONFIG["geminiApiKey"] = os.environ["GEMINI_API_KEY"]
+if os.environ.get("OPENROUTER_API_KEY"):
+    CONFIG["openrouterApiKey"] = os.environ["OPENROUTER_API_KEY"]
 
 
 def config_status():
     has_gemini = bool(CONFIG.get("geminiApiKey"))
+    has_openrouter = bool(CONFIG.get("openrouterApiKey"))
+    provider = CONFIG.get("aiProvider") or ("openrouter" if has_openrouter else "google")
+    is_openrouter = provider == "openrouter"
+    ready = has_openrouter if is_openrouter else provider == "google" and has_gemini
     return {
         "configFile": CONFIG_PATH.name,
-        "provider": "google",
+        "provider": provider,
+        "providerLabel": "OpenRouter" if is_openrouter else "Google",
         "hasGeminiApiKey": has_gemini,
-        "missing": [] if has_gemini else ["geminiApiKey"],
-        "canUseAiText": has_gemini,
-        "canUseAiImages": has_gemini,
+        "hasOpenrouterApiKey": has_openrouter,
+        "missing": [] if ready else ["openrouterApiKey" if is_openrouter else "geminiApiKey" if provider == "google" else "aiProvider"],
+        "canUseAiText": bool(ready),
+        "canUseAiImages": bool(ready),
+        "textModel": (CONFIG.get("openrouterModel") or "openai/gpt-4.1-nano") if is_openrouter else (CONFIG.get("geminiModel") or "gemini-3.1-flash-lite"),
+        "imageModel": (CONFIG.get("openrouterImageModel") or "qwen/qwen-image-2.1-turbo") if is_openrouter else (CONFIG.get("geminiImageModel") or "gemini-3.1-flash-image"),
+        "imageSize": (CONFIG.get("openrouterImageSize") or "1K") if is_openrouter else (CONFIG.get("geminiImageSize") or "512"),
         "geminiModel": CONFIG.get("geminiModel") or "gemini-3.1-flash-lite",
         "geminiImageModel": CONFIG.get("geminiImageModel") or "gemini-3.1-flash-image",
         "geminiImageSize": CONFIG.get("geminiImageSize") or "512",
@@ -126,11 +138,11 @@ class ApiError(RuntimeError):
 def provider_error(provider, status, data):
     error = data.get("error", {})
     message = error if isinstance(error, str) else error.get("message", "La solicitud falló.")
-    raise ApiError(google_error(status, message), status)
+    raise ApiError(openrouter_error(status, message) if provider == "OpenRouter" else google_error(status, message), status)
 
 
 def google_error(status, message):
-    safe = str(message).replace(CONFIG.get("geminiApiKey") or "\x00", "[clave oculta]")[:800]
+    safe = redact_secrets(message)[:800]
     if status == 429:
         if "free_tier" in safe.lower() and re.search(r"limit:\s*0", safe, re.I):
             return "Google HTTP 429: este modelo tiene cuota 0 en el nivel gratuito del proyecto de esta clave. Revisá la facturación de ese mismo proyecto en Google AI Studio. No se reenvió la solicitud."
@@ -146,6 +158,75 @@ def google_error(status, message):
     else:
         help_text = "Podés volver a intentar más tarde."
     return f"Google HTTP {status}: {safe[:180]} {help_text}"
+
+
+def redact_secrets(message):
+    safe = str(message or "La solicitud falló.")
+    for key in (CONFIG.get("geminiApiKey"), CONFIG.get("openrouterApiKey")):
+        if key:
+            safe = safe.replace(key, "[clave oculta]")
+    return re.sub(r"sk-or-v1-[A-Za-z0-9_-]+|AIza[0-9A-Za-z_-]{35}", "[clave oculta]", safe)
+
+
+def openrouter_error(status, message):
+    if status == 402:
+        help_text = "Revisá el saldo de OpenRouter y el límite de gasto de esta clave."
+    elif status in (401, 403):
+        help_text = "Revisá la clave de OpenRouter, sus permisos y los modelos permitidos."
+    elif status == 429:
+        help_text = "Se alcanzó un límite de OpenRouter. Revisá la cuota de esta clave."
+    elif status in (400, 404):
+        help_text = "Revisá el modelo y la resolución configurados para OpenRouter."
+    else:
+        help_text = "Podés volver a intentar más tarde."
+    return f"OpenRouter HTTP {status}: {redact_secrets(message)[:180]} {help_text} No se reenvió la solicitud."
+
+
+def require_provider():
+    settings = config_status()
+    if settings["provider"] not in ("google", "openrouter"):
+        raise ApiError("aiProvider debe ser openrouter o google.", 400)
+    if not settings["canUseAiText"]:
+        raise ApiError("Agregá openrouterApiKey en config.local.json o OPENROUTER_API_KEY para usar OpenRouter."
+                       if settings["provider"] == "openrouter" else
+                       "Agregá geminiApiKey en config.local.json o GEMINI_API_KEY para usar Google.", 400)
+    return settings
+
+
+def openrouter_get(path):
+    req = urllib.request.Request(OPENROUTER_API + path, headers={"Authorization": "Bearer " + CONFIG["openrouterApiKey"]})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        try:
+            data = json.loads(error.read().decode("utf-8"))
+        except Exception:
+            data = {}
+        provider_error("OpenRouter", error.code, data)
+    except (urllib.error.URLError, TimeoutError):
+        raise ApiError("No se pudo conectar con OpenRouter para comprobar la configuración.", 504)
+    if data.get("error"):
+        provider_error("OpenRouter", 502, data)
+    return data
+
+
+def check_provider():
+    settings = require_provider()
+    if settings["provider"] == "google":
+        return check_google()
+    openrouter_get("key")
+    catalog = openrouter_get("models")
+    text = next((model for model in catalog.get("data", []) if model.get("id") == settings["textModel"]), {})
+    if "text" not in text.get("architecture", {}).get("output_modalities", []):
+        raise ApiError("El modelo de especies no está disponible para texto en OpenRouter.", 400)
+    image = openrouter_get("images/models/" + quote(settings["imageModel"], safe="/") + "/endpoints")
+    supported = any(settings["imageSize"] in endpoint.get("supported_parameters", {}).get("resolution", {}).get("values", [])
+                    and endpoint.get("supported_parameters", {}).get("input_references", {}).get("min", 0) == 0
+                    for endpoint in image.get("endpoints", []))
+    if not supported:
+        raise ApiError("El modelo de imágenes no admite la resolución configurada o requiere una imagen de referencia. Revisá OpenRouter.", 400)
+    return {"ok": True, "message": "OpenRouter reconoce la clave y los modelos configurados. No se generó contenido; el saldo y los permisos de generación se comprueban al generar."}
 
 
 def require_google_key():
@@ -175,6 +256,9 @@ def check_google():
 
 
 def generate_species(body):
+    settings = require_provider()
+    if settings["provider"] == "openrouter":
+        return generate_openrouter_species(body, settings)
     require_google_key()
     total = sum(clamp_count(body.get(key, 0)) for key in ("producers", "herbivores", "carnivores"))
     if not total:
@@ -208,15 +292,58 @@ def generate_species(body):
     return generation_cache.get_or_create("species", {"model": model, "payload": payload}, generate, fresh=body.get("fresh") is True)["value"]
 
 
+def openrouter_usage(data):
+    usage = data.get("usage") or {}
+    return {key: usage.get(key) if isinstance(usage.get(key), (int, float)) else None
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens", "cost")}
+
+
+def openrouter_post(path, payload, timeout=60):
+    status, data = post_json(OPENROUTER_API + path, payload, {"Authorization": "Bearer " + CONFIG["openrouterApiKey"]}, timeout=timeout)
+    if status >= 400 or data.get("error"):
+        code = (data.get("error") or {}).get("code") if isinstance(data.get("error"), dict) else None
+        status = status if status >= 400 else code if isinstance(code, int) and 400 <= code <= 599 else 502
+        provider_error("OpenRouter", status, data)
+    return data
+
+
+def generate_openrouter_species(body, settings):
+    total = sum(clamp_count(body.get(key, 0)) for key in ("producers", "herbivores", "carnivores"))
+    if not total:
+        raise ApiError("Elegí al menos una especie.", 400)
+    payload = {"model": settings["textModel"], "messages": [{"role": "user", "content": build_species_prompt(body)}],
+               "temperature": 0.85, "max_tokens": min(4096, 256 + 320 * total), "response_format": {"type": "json_object"},
+               "provider": {"sort": "price", "allow_fallbacks": False, "require_parameters": True}}
+    def generate():
+        data = openrouter_post("chat/completions", payload)
+        text = (data.get("choices") or [{}])[0].get("message", {}).get("content")
+        try:
+            parsed = extract_json(text if isinstance(text, str) else "")
+        except (ValueError, TypeError):
+            raise ApiError("OpenRouter no devolvió un JSON válido de especies. No se reenvió la solicitud.", 422)
+        species = parsed.get("species") if isinstance(parsed, dict) else None
+        valid = [sp for sp in species if isinstance(sp, dict) and isinstance(sp.get("name"), str)
+                 and sp.get("class") in ("producer", "herbivore", "carnivore")][:MAX_SPECIES_PER_REQUEST] if isinstance(species, list) else []
+        if not valid:
+            raise ApiError("OpenRouter no devolvió especies válidas.", 422)
+        for key, species_class in (("producers", "producer"), ("herbivores", "herbivore"), ("carnivores", "carnivore")):
+            if sum(sp["class"] == species_class for sp in valid) != clamp_count(body.get(key, 0)):
+                raise ApiError("OpenRouter devolvió cantidades de especies distintas de las pedidas. No se generaron imágenes.", 422)
+        return {"value": valid, "usage": openrouter_usage(data)}
+    return generation_cache.get_or_create("species", {"provider": "openrouter", "payload": payload}, generate, fresh=body.get("fresh") is True)["value"]
+
+
 def build_image_prompt(prompt):
-    return PROMPTS["image"].replace("$APPEARANCE", prompt)
+    body = PROMPTS["imageProducer"] if re.search(r"Species type:\s*producer\.\s*$", prompt, re.I) else PROMPTS["imageAnimal"]
+    return PROMPTS["image"].replace("$APPEARANCE", prompt).replace("$BODY", body)
 
 
 def generate_image(prompt):
-    require_google_key()
+    settings = require_provider()
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 10000:
         raise ApiError("Falta una descripción de imagen válida (máximo 10000 caracteres).", 400)
-    settings = config_status()
+    if settings["provider"] == "openrouter":
+        return generate_openrouter_image(prompt, settings)
     size = settings["geminiImageSize"]
     if size not in ("512", "1K"):
         raise ApiError("geminiImageSize debe ser 512 o 1K para este juego.", 400)
@@ -255,6 +382,30 @@ def generate_image(prompt):
     return generation_cache.get_or_create("image", {"model": settings["geminiImageModel"], "payload": payload}, generate)["value"]
 
 
+def generate_openrouter_image(prompt, settings):
+    if settings["imageSize"] not in ("512", "768", "1K"):
+        raise ApiError("openrouterImageSize debe ser 512, 768 o 1K para este juego.", 400)
+    payload = {"model": settings["imageModel"], "prompt": build_image_prompt(prompt), "n": 1,
+               "resolution": settings["imageSize"], "aspect_ratio": "1:1", "provider": {"sort": "price", "allow_fallbacks": False}}
+    def generate():
+        data = openrouter_post("images", payload, timeout=90)
+        item = (data.get("data") or [{}])[0]
+        encoded = item.get("b64_json")
+        try:
+            if not isinstance(encoded, str) or not encoded or len(encoded) > MAX_IMAGE_BYTES * 4 / 3 + 4:
+                raise ValueError()
+            raw = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error):
+            raise ApiError("OpenRouter no devolvió una imagen válida en base64. No se repetirá automáticamente.", 422)
+        mime = ("image/png" if raw.startswith(b"\x89PNG\r\n\x1a\n") else
+                "image/jpeg" if raw.startswith(b"\xff\xd8\xff") else
+                "image/webp" if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP" else None)
+        if not mime or item.get("media_type") not in (None, mime):
+            raise ApiError("OpenRouter devolvió un formato de imagen inválido o incompatible.", 422)
+        return {"value": f"data:{mime};base64,{encoded}", "usage": openrouter_usage(data)}
+    return generation_cache.get_or_create("image", {"provider": "openrouter", "payload": payload}, generate)["value"]
+
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, status, body):
         raw = json.dumps(body).encode("utf-8")
@@ -278,6 +429,9 @@ class Handler(BaseHTTPRequestHandler):
             if host not in allowed or self.headers.get("Sec-Fetch-Site") == "cross-site" or (origin and origin != f"http://{host}"):
                 raise ApiError("Las acciones de IA solo se aceptan desde este juego local.", 403)
             body = self._read_json()
+            if self.path == "/api/check-ai":
+                self._json(200, check_provider())
+                return
             if self.path == "/api/check-google":
                 self._json(200, check_google())
                 return
@@ -289,7 +443,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._json(404, {"error": "Unknown API route."})
         except Exception as error:
-            self._json(getattr(error, "status", 500), {"error": str(error)})
+            self._json(getattr(error, "status", 500), {"error": redact_secrets(error)})
 
     def do_GET(self):
         parsed = urlparse(self.path)

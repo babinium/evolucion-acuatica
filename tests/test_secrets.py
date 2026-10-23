@@ -64,6 +64,17 @@ class CredentialGuardTests(unittest.TestCase):
         self.assertTrue(guard.private_path('config.local.backup.json'))
         self.assertFalse(guard.private_path('config.local.example.json'))
 
+    def test_openrouter_keys_are_detected_without_printing_their_values(self):
+        key = 'sk-or-v1-' + 'b' * 64
+        self.assertTrue(guard.has_secret(key.encode(), []))
+        value = 'unusual-' + 'secret-value'
+        self.assertTrue(guard.has_secret(json.dumps({'openrouterApiKey': value}).encode(), []))
+        (self.root / 'app.js').write_text(key)
+        self.git('add', 'app.js')
+        result = self.check('--staged')
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn(key, result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

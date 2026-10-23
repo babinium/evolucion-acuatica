@@ -129,6 +129,20 @@ test('keyboard movement works after focusing the pause button', () => {
   assert.ok(game.run('state.camera.x') > before);
 });
 
+test('insufficient OpenRouter balance stops the remaining images and keeps the world playable', async () => {
+  let images=0;
+  const game=createGame({fetch:async url=>{
+    if(url==='/api/config-status') return {ok:true,json:async()=>({canUseAiImages:true,canUseAiText:true,providerLabel:'OpenRouter'})};
+    if(url==='/api/generate-species') return {ok:true,json:async()=>({species:[{name:'Alga',class:'producer'},{name:'Pez',class:'herbivore'},{name:'Cazador',class:'carnivore'}]})};
+    images++;
+    return {ok:false,status:402,json:async()=>({error:'OpenRouter: saldo insuficiente'})};
+  }});
+  await game.run('startWorld(true,true)');
+  assert.equal(images,1);
+  assert.equal(game.run('state.started'),true);
+  assert.equal(game.run('state.species.every(sp=>sp.artworkError.includes("saldo"))'),true);
+});
+
 test('changing nutrients updates local water and its indicator immediately in pause', () => {
   const game=createGame();
   game.run('seedWorld(fallbackSpecies(1,1,1));state.paused=true');

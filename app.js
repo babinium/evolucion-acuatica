@@ -182,14 +182,14 @@ async function loadConfigStatus() {
     if (!response.ok) throw new Error(status.error || "Configuración no disponible");
     configState = status;
     statusEl.textContent = status.canUseAiImages
-      ? "Google configurado para especies e imágenes. Podés comprobar la conexión antes de generar."
-      : "Listo para jugar sin claves. Agregá una clave de Google para crear especies e imágenes.";
+      ? `${status.providerLabel || 'IA'} configurado para especies e imágenes. Podés comprobar la conexión antes de generar.`
+      : "Listo para jugar sin claves. Agregá la clave del proveedor elegido para crear especies e imágenes.";
   } catch {
     statusEl.textContent = "Listo para jugar sin conexión. La IA necesita el servidor local.";
   }
   document.getElementById("startAI").disabled = !configState.canUseAiImages;
   document.getElementById("startAIText").disabled = !configState.canUseAiText;
-  document.getElementById("checkGoogle").disabled = !configState.canUseAiText;
+  document.getElementById("checkAi").disabled = !configState.canUseAiText;
   document.getElementById("apiBadge").textContent = configState.canUseAiText ? "IA configurada" : "Modo local disponible";
   updateManualSpeciesCounter();
 }
@@ -460,8 +460,8 @@ async function startWorld(useAI, withImages = true) {
 
   worldStarting = true;
   try {
-    showBusy("Creando mundo", "Generando especies con Gemini...");
-    setupStatus.textContent = "Generando especies con Gemini...";
+    showBusy("Creando mundo", "Preparando especies con IA...");
+    setupStatus.textContent = "Preparando especies con IA...";
     state.aiCalls++;
     const data = await requestApi("/api/generate-species", {
       producers, herbivores, carnivores, world: { chaos: state.chaos, mutationRate: state.mutationRate },
@@ -482,7 +482,7 @@ async function startWorld(useAI, withImages = true) {
           species[i].artworkError = error.message;
           logError(`Imágenes de ${species[i].name}: ${error.message}. Se usará un dibujo local.`);
           // Permanent errors affect every following species; avoid more paid requests.
-          if ([400, 401, 403, 404, 429, 500, 502, 503, 504].includes(error.status)) {
+          if ([400, 401, 402, 403, 404, 429, 500, 502, 503, 504].includes(error.status)) {
             for (const remaining of species.slice(i+1)) remaining.artworkError = error.message;
             missingImages += species.length - i - 1; break;
           }
@@ -506,12 +506,12 @@ async function addSpeciesArtwork(species, statusEl) {
   const data = await requestApi("/api/generate-images", {
     prompt: `${species.visualDescription || species.spritePrompt || species.name}. Species type: ${species.class}.`
   }, 105000);
-  if (!data.image) throw new Error("Google no devolvió una ilustración.");
+  if (!data.image) throw new Error("La IA no devolvió una ilustración.");
   statusEl.textContent = `Recortando y preparando ${species.name}…`;
   updateBusy(statusEl.textContent);
   // Assign only after both local assets decode and pass the cutout checks.
   // A bad image never triggers a second paid generation from the client.
-  const artwork = await prepareSpeciesArtwork(data.image);
+  const artwork = await prepareSpeciesArtwork(data.image,species.class);
   Object.assign(species, artwork, { artworkVersion: 1, artworkError: "" });
 }
 
@@ -760,7 +760,7 @@ function getSprite(species) {
   return entry;
 }
 
-function cutoutImage(img) {
+function cutoutImage(img,singleAnimal=false) {
   const width=img.naturalWidth||img.width, height=img.naturalHeight||img.height;
   if(!width||!height||width>4096||height>4096) throw new Error("La ilustración tiene dimensiones inválidas.");
   const scale=Math.min(1,512/Math.max(width,height));
@@ -769,7 +769,7 @@ function cutoutImage(img) {
   const context=source.getContext("2d",{willReadFrequently:true});
   context.drawImage(img,0,0,source.width,source.height);
   const image=context.getImageData(0,0,source.width,source.height);
-  const result=SpriteTools.cutout(image.data,source.width,source.height);
+  const result=SpriteTools.cutout(image.data,source.width,source.height,{singleAnimal});
   image.data.set(result.data);context.putImageData(image,0,0);
   return {source,...result};
 }
@@ -787,7 +787,7 @@ function removeSpriteBackground(img) {
   return fittedArtwork(cutoutImage(img),192);
 }
 
-async function prepareSpeciesArtwork(url) {
+async function prepareSpeciesArtwork(url,kind) {
   if(!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i.test(url)||url.length>12*1024*1024) {
     throw new Error("La ilustración recibida no tiene un formato válido.");
   }
@@ -795,10 +795,10 @@ async function prepareSpeciesArtwork(url) {
     const image=new Image();
     const timer=setTimeout(()=>{image.onload=null;image.onerror=null;reject(new Error("No se pudo abrir la ilustración a tiempo."));},15000);
     image.onload=()=>{clearTimeout(timer);resolve(image);};
-    image.onerror=()=>{clearTimeout(timer);reject(new Error("El navegador no pudo abrir la ilustración de Google."));};
+    image.onerror=()=>{clearTimeout(timer);reject(new Error("El navegador no pudo abrir la ilustración."));};
     image.src=url;
   });
-  const cutout=cutoutImage(img);
+  const cutout=cutoutImage(img,kind==='herbivore'||kind==='carnivore');
   if(cutout.clipped) throw new Error("La ilustración toca el borde y puede estar cortada. Se usará un dibujo local.");
   return {spriteUrl:fittedArtwork(cutout,192).toDataURL("image/png"),
     portraitUrl:fittedArtwork(cutout,384).toDataURL("image/png")};
@@ -1110,10 +1110,10 @@ window.addEventListener("keyup", (event) => keys.delete(event.key.toLowerCase())
 document.getElementById("startLocal").addEventListener("click", () => startWorld(false));
 document.getElementById("startAI").addEventListener("click", () => startWorld(true, true));
 document.getElementById("startAIText").addEventListener("click", () => startWorld(true, false));
-document.getElementById("checkGoogle").addEventListener("click", async () => {
-  const button=document.getElementById("checkGoogle"),status=document.getElementById("googleStatus");
-  button.disabled=true;status.textContent="Comprobando la clave y los modelos de Google…";
-  try { const result=await requestApi("/api/check-google",{},35000);status.textContent=result.message; }
+document.getElementById("checkAi").addEventListener("click", async () => {
+  const button=document.getElementById("checkAi"),status=document.getElementById("aiStatus");
+  button.disabled=true;status.textContent="Comprobando la clave y los modelos, sin generar contenido…";
+  try { const result=await requestApi("/api/check-ai",{},50000);status.textContent=result.message; }
   catch(error) {status.textContent=error.message;}
   finally {button.disabled=!configState.canUseAiText;}
 });

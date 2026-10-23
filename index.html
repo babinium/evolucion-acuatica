@@ -260,8 +260,8 @@
                 </span>
               </summary>
               <p class="hint">
-                Google crea las especies y una ilustración por especie para el mapa y su ficha.
-                La generación consume la cuota de tu cuenta. Durante la simulación no se hacen llamadas.
+                La IA crea las especies y una ilustración por especie para el mapa y su ficha.
+                Las generaciones nuevas consumen el saldo o la cuota de tu cuenta. Durante la simulación no se hacen llamadas.
               </p>
               <div class="setup-actions">
                 <button id="startAI" disabled>
@@ -280,7 +280,7 @@
                 <code>
                   python3 server.py
                 </code>
-                y agregá una clave de Google AI Studio como <code>geminiApiKey</code> en
+                y agregá tu clave como <code>openrouterApiKey</code> en
                 <code>
                   config.local.json
                 </code>
@@ -288,12 +288,13 @@
                 <code>
                   config.local.example.json
                 </code>
-                . La misma clave sirve para especies e imágenes. Las imágenes necesitan facturación
-                y cuota disponibles en Google. Reiniciá el servidor al cambiar la configuración.
-                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Obtener clave en Google AI Studio ↗</a>
+                . La misma clave sirve para especies e imágenes. OpenRouter necesita saldo y permiso para los modelos elegidos.
+                Google sigue disponible eligiendo <code>aiProvider: "google"</code> y su clave <code>geminiApiKey</code>.
+                Reiniciá el servidor al cambiar la configuración.
+                <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">Obtener clave en OpenRouter ↗</a>
               </div>
-              <button id="checkGoogle" class="text-button" disabled>Comprobar conexión con Google</button>
-              <p id="googleStatus" class="status" role="status"></p>
+              <button id="checkAi" class="text-button" disabled>Comprobar conexión</button>
+              <p id="aiStatus" class="status" role="status"></p>
               <div id="errorLog" class="error-log hidden">
               </div>
             </details>

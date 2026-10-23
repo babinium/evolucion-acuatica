@@ -84,6 +84,7 @@ if __name__ == "__main__":
     server.generate_species = species_fixture
     server.generate_image = lambda prompt: images[next((kind for kind in images if f"Species type: {kind}" in prompt), "herbivore")]
     server.check_google = lambda: {"ok": True, "message": "Prueba visual: no se consultó a Google ni se consumió cuota."}
+    server.check_provider = lambda: {"ok": True, "message": "Prueba visual: no se consultó a ningún proveedor ni se consumió saldo."}
     # Make accidental real network calls impossible in this fixture server.
     def offline(*args, **kwargs):
         raise RuntimeError("Esta prueba no permite conexiones con proveedores.")

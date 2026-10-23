@@ -11,19 +11,30 @@ export const config = existsSync(configPath)
   ? JSON.parse(await readFile(configPath, "utf8"))
   : { geminiApiKey: "" };
 if (process.env.GEMINI_API_KEY) config.geminiApiKey = process.env.GEMINI_API_KEY;
+if (process.env.OPENROUTER_API_KEY) config.openrouterApiKey = process.env.OPENROUTER_API_KEY;
 const GOOGLE_API = "https://generativelanguage.googleapis.com/v1beta/models/";
+const OPENROUTER_API = "https://openrouter.ai/api/v1/";
 const PROMPTS = JSON.parse(await readFile(join(root,"generation-prompts.json"),"utf8"));
 export const generationCache = new GenerationCache(join(root,".ai-cache"));
 
 export function configStatus() {
   const hasGeminiApiKey = Boolean(config.geminiApiKey);
+  const hasOpenrouterApiKey = Boolean(config.openrouterApiKey);
+  const provider = config.aiProvider || (hasOpenrouterApiKey ? 'openrouter' : 'google');
+  const isOpenrouter = provider === 'openrouter';
+  const ready = isOpenrouter ? hasOpenrouterApiKey : provider === 'google' && hasGeminiApiKey;
   return {
     configFile: "config.local.json",
-    provider: "google",
+    provider,
+    providerLabel: isOpenrouter ? 'OpenRouter' : 'Google',
     hasGeminiApiKey,
-    missing: hasGeminiApiKey ? [] : ["geminiApiKey"],
-    canUseAiText: hasGeminiApiKey,
-    canUseAiImages: hasGeminiApiKey,
+    hasOpenrouterApiKey,
+    missing: ready ? [] : [isOpenrouter ? 'openrouterApiKey' : provider === 'google' ? 'geminiApiKey' : 'aiProvider'],
+    canUseAiText: Boolean(ready),
+    canUseAiImages: Boolean(ready),
+    textModel: isOpenrouter ? config.openrouterModel || 'openai/gpt-4.1-nano' : config.geminiModel || 'gemini-3.1-flash-lite',
+    imageModel: isOpenrouter ? config.openrouterImageModel || 'qwen/qwen-image-2.1-turbo' : config.geminiImageModel || 'gemini-3.1-flash-image',
+    imageSize: isOpenrouter ? config.openrouterImageSize || '1K' : config.geminiImageSize || '512',
     geminiModel: config.geminiModel || "gemini-3.1-flash-lite",
     geminiImageModel: config.geminiImageModel || "gemini-3.1-flash-image",
     geminiImageSize: config.geminiImageSize || "512"
@@ -105,16 +116,17 @@ async function postJson(url, payload, headers, provider, timeout = 60000) {
     throw new ApiError(`${provider}: no se pudo conectar o se agotó el tiempo de espera.`, 504);
   }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  if (!response.ok || data.error) {
     const message = typeof data.error === "string" ? data.error : data.error?.message;
-    throw new ApiError(googleError(response.status, message || "La solicitud falló."), response.status);
+    const status = response.ok ? (Number(data.error?.code) >= 400 && Number(data.error?.code) <= 599 ? Number(data.error.code) : 502) : response.status;
+    throw new ApiError(provider === 'OpenRouter' ? openrouterError(status, message) : googleError(status, message || "La solicitud falló."), status);
   }
   return data;
 }
 
 function googleError(status, message) {
   // Provider errors occasionally echo request values. Never forward our key.
-  const safe = String(message).replaceAll(config.geminiApiKey || "\u0000", "[clave oculta]").slice(0, 800);
+  const safe = redactSecrets(message).slice(0, 800);
   if(status===429) {
     return /free_tier/i.test(safe)&&/limit:\s*0/i.test(safe)
       ? 'Google HTTP 429: este modelo tiene cuota 0 en el nivel gratuito del proyecto de esta clave. Revisá la facturación de ese mismo proyecto en Google AI Studio. No se reenvió la solicitud.'
@@ -126,6 +138,55 @@ function googleError(status, message) {
     : status === 429 ? "Revisá la cuota y la facturación del proyecto en Google AI Studio."
     : "Podés volver a intentar más tarde.";
   return `Google HTTP ${status}: ${safe.slice(0,180)} ${help}`;
+}
+
+function redactSecrets(message) {
+  let safe = String(message || 'La solicitud falló.');
+  for (const key of [config.geminiApiKey, config.openrouterApiKey]) if (key) safe = safe.replaceAll(key, '[clave oculta]');
+  return safe.replace(/sk-or-v1-[A-Za-z0-9_-]+|AIza[0-9A-Za-z_-]{35}/g, '[clave oculta]');
+}
+
+function openrouterError(status, message) {
+  const help = status === 402 ? 'Revisá el saldo de OpenRouter y el límite de gasto de esta clave.'
+    : [401,403].includes(status) ? 'Revisá la clave de OpenRouter, sus permisos y los modelos permitidos.'
+    : status === 429 ? 'Se alcanzó un límite de OpenRouter. Revisá la cuota de esta clave.'
+    : [400,404].includes(status) ? 'Revisá el modelo y la resolución configurados para OpenRouter.'
+    : 'Podés volver a intentar más tarde.';
+  return `OpenRouter HTTP ${status}: ${redactSecrets(message).slice(0,180)} ${help} No se reenvió la solicitud.`;
+}
+
+function requireProvider() {
+  const settings = configStatus();
+  if (!['google','openrouter'].includes(settings.provider)) throw new ApiError('aiProvider debe ser openrouter o google.',400);
+  if (!settings.canUseAiText) throw new ApiError(settings.provider === 'openrouter'
+    ? 'Agregá openrouterApiKey en config.local.json o OPENROUTER_API_KEY para usar OpenRouter.'
+    : 'Agregá geminiApiKey en config.local.json o GEMINI_API_KEY para usar Google.',400);
+  return settings;
+}
+
+async function openrouterGet(path) {
+  let response;
+  try { response = await fetch(OPENROUTER_API + path, {
+    headers:{Authorization:`Bearer ${config.openrouterApiKey}`}, signal:AbortSignal.timeout(15000)
+  }); } catch { throw new ApiError('No se pudo conectar con OpenRouter para comprobar la configuración.',504); }
+  const data = await response.json().catch(()=>({}));
+  if (!response.ok || data.error) throw new ApiError(openrouterError(response.ok ? 502 : response.status, data.error?.message), response.ok ? 502 : response.status);
+  return data;
+}
+
+export async function checkProvider() {
+  const settings = requireProvider();
+  if (settings.provider === 'google') return checkGoogle();
+  await openrouterGet('key');
+  const catalog = await openrouterGet('models');
+  const text = catalog.data?.find(model=>model.id === settings.textModel);
+  if (!text?.architecture?.output_modalities?.includes('text')) throw new ApiError('El modelo de especies no está disponible para texto en OpenRouter.',400);
+  const image = await openrouterGet(`images/models/${settings.imageModel.split('/').map(encodeURIComponent).join('/')}/endpoints`);
+  if (!image.endpoints?.some(endpoint=>{
+    const sizes=endpoint.supported_parameters?.resolution?.values;
+    return sizes?.includes(settings.imageSize) && (endpoint.supported_parameters?.input_references?.min || 0) === 0;
+  })) throw new ApiError('El modelo de imágenes no admite la resolución configurada o requiere una imagen de referencia. Revisá OpenRouter.',400);
+  return {ok:true,message:'OpenRouter reconoce la clave y los modelos configurados. No se generó contenido; el saldo y los permisos de generación se comprueban al generar.'};
 }
 
 function requireGoogleKey() {
@@ -150,6 +211,8 @@ export async function checkGoogle() {
 }
 
 export async function generateSpecies(body) {
+  const settings = requireProvider();
+  if (settings.provider === 'openrouter') return generateOpenrouterSpecies(body,settings);
   requireGoogleKey();
   const total=['producers','herbivores','carnivores'].reduce((sum,key)=>sum+clampCount(body[key]),0);
   if(!total) throw new ApiError('Elegí al menos una especie.',400);
@@ -174,13 +237,41 @@ export async function generateSpecies(body) {
   return record.value;
 }
 
+async function generateOpenrouterSpecies(body,settings) {
+  const total=['producers','herbivores','carnivores'].reduce((sum,key)=>sum+clampCount(body[key]),0);
+  if (!total) throw new ApiError('Elegí al menos una especie.',400);
+  const payload={model:settings.textModel,messages:[{role:'user',content:buildSpeciesPrompt(body)}],
+    temperature:0.85,max_tokens:Math.min(4096,256+320*total),response_format:{type:'json_object'},
+    provider:{sort:'price',allow_fallbacks:false,require_parameters:true}};
+  const record=await generationCache.getOrCreate('species',{provider:'openrouter',payload},async()=>{
+    const data=await postJson(OPENROUTER_API+'chat/completions',payload,{Authorization:`Bearer ${config.openrouterApiKey}`},'OpenRouter');
+    const text=data.choices?.[0]?.message?.content;
+    let parsed;
+    try {parsed=extractJson(typeof text==='string'?text:'');} catch {throw new ApiError('OpenRouter no devolvió un JSON válido de especies. No se reenvió la solicitud.',422);}
+    const species=Array.isArray(parsed?.species)?parsed.species.filter(sp=>sp&&typeof sp.name==='string'&&['producer','herbivore','carnivore'].includes(sp.class)).slice(0,MAX_SPECIES_PER_REQUEST):[];
+    if(!species.length) throw new ApiError('OpenRouter no devolvió especies válidas.',422);
+    for(const [key,type] of [['producers','producer'],['herbivores','herbivore'],['carnivores','carnivore']]) {
+      if(species.filter(sp=>sp.class===type).length!==clampCount(body[key])) throw new ApiError('OpenRouter devolvió cantidades de especies distintas de las pedidas. No se generaron imágenes.',422);
+    }
+    return {value:species,usage:openrouterUsage(data)};
+  },{fresh:body.fresh===true});
+  return record.value;
+}
+
+function openrouterUsage(data) {
+  const usage=data.usage||{};
+  return Object.fromEntries(['prompt_tokens','completion_tokens','total_tokens','cost'].map(key=>[key,Number.isFinite(usage[key])?usage[key]:null]));
+}
+
 export function buildImagePrompt(prompt) {
-  return PROMPTS.image.replace('$APPEARANCE',prompt);
+  const body=/Species type:\s*producer\.\s*$/i.test(prompt)?PROMPTS.imageProducer:PROMPTS.imageAnimal;
+  return PROMPTS.image.replace('$APPEARANCE',prompt).replace('$BODY',body);
 }
 
 export async function generateImage(prompt) {
-  requireGoogleKey();
+  const settings = requireProvider();
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 10000) throw new ApiError("Falta una descripción de imagen válida (máximo 10000 caracteres).", 400);
+  if (settings.provider === 'openrouter') return generateOpenrouterImage(prompt,settings);
   const { geminiImageModel: model, geminiImageSize: size } = configStatus();
   if (!["512", "1K"].includes(size)) throw new ApiError("geminiImageSize debe ser 512 o 1K para este juego.", 400);
   const payload={
@@ -212,6 +303,25 @@ export async function generateImage(prompt) {
   return record.value;
 }
 
+async function generateOpenrouterImage(prompt,settings) {
+  if (!['512','768','1K'].includes(settings.imageSize)) throw new ApiError('openrouterImageSize debe ser 512, 768 o 1K para este juego.',400);
+  const payload={model:settings.imageModel,prompt:buildImagePrompt(prompt),n:1,resolution:settings.imageSize,
+    aspect_ratio:'1:1',provider:{sort:'price',allow_fallbacks:false}};
+  const record=await generationCache.getOrCreate('image',{provider:'openrouter',payload},async()=>{
+    const data=await postJson(OPENROUTER_API+'images',payload,{Authorization:`Bearer ${config.openrouterApiKey}`},'OpenRouter',90000);
+    const item=data.data?.[0],encoded=item?.b64_json;
+    if(typeof encoded!=='string'||!encoded.length||encoded.length>MAX_IMAGE_BYTES*4/3+4
+      || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)||encoded.length%4) throw new ApiError('OpenRouter no devolvió una imagen válida en base64. No se repetirá automáticamente.',422);
+    const bytes=Buffer.from(encoded,'base64');
+    const mime=bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))?'image/png'
+      : bytes[0]===255&&bytes[1]===216&&bytes[2]===255?'image/jpeg'
+      : bytes.subarray(0,4).toString()==='RIFF'&&bytes.subarray(8,12).toString()==='WEBP'?'image/webp':null;
+    if(!mime||(item.media_type&&item.media_type!==mime)) throw new ApiError('OpenRouter devolvió un formato de imagen inválido o incompatible.',422);
+    return {value:`data:${mime};base64,${encoded}`,usage:openrouterUsage(data)};
+  });
+  return record.value;
+}
+
 
 async function handleApi(req, res) {
   try {
@@ -221,6 +331,10 @@ async function handleApi(req, res) {
       throw new ApiError('Las acciones de IA solo se aceptan desde este juego local.',403);
     }
     const body = await readBody(req);
+    if (req.url === '/api/check-ai') {
+      sendJson(res,200,await checkProvider());
+      return;
+    }
     if (req.url === "/api/check-google") {
       sendJson(res, 200, await checkGoogle());
       return;
@@ -236,7 +350,7 @@ async function handleApi(req, res) {
     }
     sendJson(res, 404, { error: "Unknown API route." });
   } catch (error) {
-    sendJson(res, error.status || 500, { error: error.message });
+    sendJson(res, error.status || 500, { error: redactSecrets(error.message) });
   }
 }
 

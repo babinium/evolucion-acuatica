@@ -193,7 +193,7 @@ test('local Node server serves the game and protects the key file', async () => 
     assert.equal(page.status, 200);
     assert.match(await page.text(), /Crear mi ecosistema/);
     const status = await (await realFetch(`${url}/api/config-status`)).json();
-    assert.equal(Object.keys(status).some(k => k === 'geminiApiKey' || k === 'togetherApiKey'), false);
+    assert.equal(Object.keys(status).some(k => k === 'geminiApiKey' || k === 'openrouterApiKey' || k === 'togetherApiKey'), false);
     for (const path of ['/config.local.json', '/config.local.example.json', '/config.local.backup.json', '/.env', '/.ai-cache/private.json', '/.git/config']) assert.equal((await realFetch(url + path)).status, 403);
     await mkdir('.local-tools',{recursive:true});
     const directory=await mkdtemp(join(process.cwd(),'.local-tools','privacy-'));
@@ -204,10 +204,10 @@ test('local Node server serves the game and protects the key file', async () => 
       assert.equal((await realFetch(url+'/'+basename(alias))).status,403);
     } finally {await unlink(alias).catch(()=>{});await rm(directory,{recursive:true,force:true});}
 
-    if (!config.geminiApiKey) {
+    if (!status.canUseAiText) {
       const missing = await realFetch(url + '/api/generate-species', {method: 'POST', body: '{}'});
       assert.equal(missing.status, 400);
-      assert.match((await missing.json()).error, /geminiApiKey/);
+      assert.ok((await missing.json()).error.includes(status.missing[0]));
     }
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });

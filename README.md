@@ -94,9 +94,9 @@ La selección actúa sobre la supervivencia y los descendientes de cada individu
 
 Las partidas anteriores se migran al cargar: reciben genes individuales y reservas locales; se conservan individuos, selección, ambiente y poderes. Una partida guardada con este modelo conserva sus genes y reservas de agua.
 
-## IA opcional: una sola clave de Google
+## IA opcional: una sola clave de OpenRouter
 
-La misma **API de Gemini de Google AI Studio** crea las especies y sus imágenes. No se usa Together ni se necesita una API separada de recorte. La simulación, la evolución y los reinicios funcionan sin conexión y no hacen generaciones. La IA solo se usa al crear un mundo con IA o una especie con imágenes.
+Una clave de **OpenRouter** sirve para crear las especies y sus imágenes. El texto usa por defecto `openai/gpt-4.1-nano`, sin razonamiento adicional, y las ilustraciones `qwen/qwen-image-2.1-turbo` a 1K, su menor resolución admitida. El modelo de imágenes cobra por ilustración; el tamaño del sprite final sigue siendo 192 px. No necesitás una clave ni facturación de Google, ni una API separada de recorte. La simulación, la evolución y los reinicios funcionan sin conexión y no hacen generaciones.
 
 ```sh
 cp config.local.example.json config.local.json
@@ -106,26 +106,28 @@ Pegá tu clave en ese archivo local y reiniciá `python3 server.py`:
 
 ```json
 {
-  "geminiApiKey": "tu-clave-de-google-ai-studio",
-  "geminiModel": "gemini-3.1-flash-lite",
-  "geminiImageModel": "gemini-3.1-flash-image",
-  "geminiImageSize": "512"
+  "aiProvider": "openrouter",
+  "openrouterApiKey": "tu-clave-de-openrouter",
+  "openrouterModel": "openai/gpt-4.1-nano",
+  "openrouterImageModel": "qwen/qwen-image-2.1-turbo",
+  "openrouterImageSize": "1K"
 }
 ```
 
-También se admite `GEMINI_API_KEY` como variable de entorno en ambos servidores; tiene prioridad sobre el archivo. `config.local.json` está ignorado por Git y bloqueado por los servidores web. La clave se envía únicamente desde el servidor a Google mediante la cabecera `x-goog-api-key`.
+También se admite `OPENROUTER_API_KEY` como variable de entorno en ambos servidores; tiene prioridad sobre el archivo. `config.local.json` está ignorado por Git y bloqueado por los servidores web. La clave se envía únicamente desde el servidor a OpenRouter, en la cabecera de autorización; no se entrega al navegador. Creala en [OpenRouter](https://openrouter.ai/settings/keys), con saldo y un límite de gasto adecuado. El juego no compra créditos ni cambia ese límite. Los modelos y sus parámetros se verificaron contra el [catálogo de imágenes](https://openrouter.ai/api/v1/images/models) y la [documentación oficial](https://openrouter.ai/docs/guides/overview/multimodal/image-generation).
 
-Obtené la clave en [Google AI Studio](https://aistudio.google.com/apikey). El proyecto asociado necesita acceso a la API de Gemini, **facturación y cuota para generar imágenes**: no alcanza con tener cuota gratuita de texto. Los modelos son configurables. Los nombres y el contrato se contrastaron con el [catálogo oficial](https://ai.google.dev/gemini-api/docs/models) y la [guía de imágenes de Google](https://ai.google.dev/gemini-api/docs/generate-content/image-generation). El valor `512` funciona con el modelo de imágenes indicado; si elegís un modelo que solo admite 1K, cambiá también `geminiImageSize` a `1K`. Para cuidar memoria no se admiten 2K ni 4K en este juego.
+**Google directo sigue disponible** con `aiProvider: "google"`, `geminiApiKey` o `GEMINI_API_KEY`, `geminiModel: "gemini-3.1-flash-lite"`, `geminiImageModel: "gemini-3.1-flash-image"` y `geminiImageSize: "512"`. Necesita facturación y cuota de imágenes en ese proyecto de Google. Las configuraciones antiguas que solo tienen clave de Gemini conservan su proveedor. Nunca se cambia automáticamente de OpenRouter a Google ante un error.
 
-En **Crear con inteligencia artificial**, el botón **Comprobar conexión con Google** consulta los metadatos de ambos modelos sin generar contenido ni imágenes. Confirma clave, permisos y disponibilidad; la cuota y la facturación de imágenes se comprueban al generar. La detección inicial de configuración solo comprueba si existe una clave.
+En **Crear con inteligencia artificial**, **Comprobar conexión** consulta la autenticación y los metadatos del proveedor sin generar contenido ni imágenes. En OpenRouter también comprueba que el modelo de texto exista y que el modelo de imágenes acepte la resolución y generación sin referencias. El saldo, las restricciones particulares de la clave y los permisos de generación se comprueban al generar. La detección inicial solo comprueba si existe una clave.
 
-**Crear con imágenes** reutiliza las especies ya guardadas cuando coinciden los ajustes. La casilla **Reutilizar especies anteriores** está activada por defecto; desmarcarla pide especies nuevas y consume cuota. Cada descripción de imagen idéntica reutiliza siempre su ilustración guardada. Las generaciones necesarias se hacen en serie. El mapa y la ficha usan esa misma ilustración, evitando diferencias de aspecto y una segunda generación de pago. **Solo especies** usa dibujos locales. El editor de especies también permite elegir entre imágenes de Google y dibujos locales. La primera creación con una especie de cada grupo necesita como máximo una respuesta de texto y tres ilustraciones. Repetirla con los mismos ajustes reutiliza los resultados disponibles sin otra generación.
+**Crear con imágenes** reutiliza las especies ya guardadas cuando coinciden los ajustes. La casilla **Reutilizar especies anteriores** está activada por defecto; desmarcarla pide especies nuevas y consume cuota. Cada descripción de imagen idéntica reutiliza siempre su ilustración guardada. Las generaciones necesarias se hacen en serie. El mapa y la ficha usan esa misma ilustración, evitando diferencias de aspecto y una segunda generación de pago. **Solo especies** usa dibujos locales. El editor también permite elegir entre imágenes de IA y dibujos locales. La primera creación con una especie de cada grupo necesita como máximo una respuesta de texto y tres ilustraciones. Repetirla con los mismos ajustes reutiliza los resultados disponibles sin otra generación.
 
 ### Preparación y dibujo de imágenes
 
 - Se pide un único cuerpo opaco, visto desde arriba, cabeza hacia la derecha, sin sombras ni escenario, con margen alrededor y fondo magenta uniforme. Se permite que el cuerpo sea azul o verde, evitando el color elegido como fondo.
-- Google no garantiza salida con transparencia. El navegador elimina el fondo conectado a los bordes con una tolerancia ajustada; no borra todos los píxeles azules, blancos o magenta del interior del cuerpo.
+- Los modelos elegidos no garantizan salida con transparencia. El navegador elimina el fondo conectado a los bordes con una tolerancia ajustada; no borra todos los píxeles azules, blancos o magenta del interior del cuerpo.
 - Se conserva la transparencia existente, se suavizan los bordes contaminados por el fondo y se descartan motas aisladas pequeñas. Las imágenes sin fondo uniforme, vacías o cortadas por el borde se rechazan y se informa del fallo.
+- Las instrucciones distinguen animales de colonias vegetales para evitar que el modelo agregue plantas junto a un pez. En animales, una separación por grosor y colores del cuerpo también elimina decoraciones contrastadas unidas por puentes estrechos; conserva aletas firmes y partes del mismo color. No se aplica a productores, que pueden tener hojas sobre tallos finos. Es una limpieza conservadora, no un reconocimiento universal de objetos; el modelo puede incumplir la pose pedida.
 - Se recorta al contorno visible y se centra sin deformar la proporción. Se guardan PNG transparentes de **192 × 192 para el mapa** y **384 × 384 para la ficha**, con un pequeño margen de seguridad. La imagen original no se conserva en la partida.
 - El trabajo de píxeles ocurre una sola vez al preparar la imagen. El mapa reutiliza el canvas; las especies descendientes comparten la misma entrada de caché. Las imágenes preparadas se conservan al guardar/cargar y no se recortan otra vez.
 - Al seleccionar un individuo o una especie se abre su ficha y se muestra la ilustración; **Ver todas las especies** vuelve a la lista sin desplazar el mundo.
@@ -133,18 +135,18 @@ En **Crear con inteligencia artificial**, el botón **Comprobar conexión con Go
 
 ### Consumo de API y protección de claves
 
-- Cada acción envía **como máximo una solicitud de generación por respuesta que falta**. No hay reenvíos automáticos ante errores, cortes o esperas agotadas: se evita repetir una operación cuyo procesamiento pudo empezar en Google. El jugador decide si vuelve a intentar.
-- Texto: instrucciones compactas, solo los campos utilizados, una respuesta y un límite de `256 + 320 × número de especies` tokens de salida (máximo 4.096). Se pide pensamiento mínimo a los modelos Flash-Lite compatibles. No significa que el pensamiento sea necesariamente cero.
-- Imágenes: una ilustración, resolución configurada de 512 px, sin búsquedas ni herramientas, respuesta solo de imagen y límite de 4.096 tokens de salida. En los modelos compatibles se pide el nivel de pensamiento más bajo admitido. El límite es un techo, no un consumo fijo.
+- Cada acción envía **como máximo una solicitud de generación por respuesta que falta**. No hay reenvíos automáticos ante errores, cortes o esperas agotadas. OpenRouter recibe un modelo explícito, prioridad de precio y `allow_fallbacks: false`; no se usan routers automáticos ni herramientas auxiliares. El jugador decide si vuelve a intentar. La falta de saldo también detiene las imágenes restantes del mundo.
+- Texto: instrucciones compactas, solo los campos utilizados, una respuesta JSON y un límite de `256 + 320 × número de especies` tokens de salida (máximo 4.096). El modelo predeterminado de OpenRouter no usa pensamiento adicional. Google directo pide pensamiento mínimo a Flash-Lite compatible; no significa necesariamente cero.
+- Imágenes: una ilustración y sin búsquedas ni herramientas. OpenRouter usa la API dedicada de imágenes, `n: 1` y 1K con Qwen; permite configurar 512, 768 o 1K si el modelo elegido lo admite. Google directo usa 512 px y un techo de 4.096 tokens de salida. Para cuidar memoria no se admiten 2K ni 4K. El mapa siempre reutiliza la versión reducida a 192 px.
 - La carpeta local `.ai-cache/` conserva respuestas e imágenes válidas entre reinicios; Python y Node pueden reutilizarlas al cambiar de servidor. Se distinguen modelo, instrucciones y ajustes; los cambios relevantes producen otra entrada. Peticiones simultáneas idénticas al mismo servidor comparten una generación. La caché no contiene claves ni cabeceras y tiene un límite de 128 respuestas y 64 MiB; al llenarse elimina las menos recientes. Las imágenes preparadas que ya estén en una partida siguen allí.
-- Simular, evolucionar, usar poderes, reiniciar y cargar una partida no generan contenido ni consumen tokens de Google. El recorte y las fichas se calculan localmente.
+- Simular, evolucionar, usar poderes, reiniciar y cargar una partida no generan contenido ni consumen saldo de los proveedores. El recorte y las fichas se calculan localmente.
 - La API rechaza acciones enviadas desde otros sitios. La configuración, sus variantes de respaldo, `.env`, la caché y los archivos ocultos no se sirven por HTTP, incluidos los accesos mediante enlaces simbólicos.
-- Git ignora la configuración local, sus respaldos, `.env` y la caché. `python3 scripts/check-secrets.py --history` revisa archivos versionados e historial sin mostrar los valores. Los hooks de este equipo bloquean commits y pushes con credenciales detectadas o archivos privados. En un clon nuevo se activan con `git config core.hooksPath .githooks`.
+- Git ignora la configuración local, sus respaldos, `.env` y la caché. `python3 scripts/check-secrets.py --history` revisa archivos versionados e historial sin mostrar los valores, incluidas claves de Google y OpenRouter. Los hooks de este equipo bloquean commits y pushes con credenciales detectadas o archivos privados. En un clon nuevo se activan con `git config core.hooksPath .githooks`.
 
 Si fallan imágenes, el mundo conserva las especies y usa dibujos locales donde haga falta; el aviso y la ficha explican el resultado. Si falla el texto de especies o no coincide la cantidad por dieta, no se solicitan imágenes. Los datos inválidos y fallos de recorte no provocan otra generación automática.
 
 
-Para comprobar visualmente el recorrido sin clave ni créditos, ejecutá `python3 tests/preview_images.py` y abrí [la prueba aislada](http://127.0.0.1:5174). Usa imágenes **sintéticas**, muestra un aviso permanente y bloquea las conexiones con proveedores. Su puerto separado evita sobrescribir la partida del juego normal. Esta prueba no confirma la calidad artística de Google ni una cuota real: eso requiere generar con tu clave.
+Para comprobar visualmente el recorrido sin clave ni créditos, ejecutá `python3 tests/preview_images.py` y abrí [la prueba aislada](http://127.0.0.1:5174). Usa imágenes **sintéticas**, muestra un aviso permanente y bloquea las conexiones con proveedores. Su puerto separado evita sobrescribir la partida del juego normal. Esta prueba no confirma la calidad artística del proveedor ni una cuota real: eso requiere generar con tu clave.
 
 ## Verificación
 
@@ -154,7 +156,7 @@ npm run benchmark
 node scripts/ecology-audit.mjs --seconds=960
 ```
 
-Las pruebas usan las herramientas estándar de Node y Python, sin instalar paquetes. Cubren los siete controles ambientales y los nueve rasgos, alimento finito, persecución, herencia y especiación, costos de reproducción, migración de partidas, poderes, pausa, búsqueda espacial, límites de memoria, pestañas ocultas, igualdad entre calidades y contratos de Google con respuestas simuladas, recorte de fondos, bordes suavizados, conservación de colores del cuerpo y reutilización de imágenes entre descendientes. No consumen créditos ni prueban credenciales reales.
+Las pruebas usan las herramientas estándar de Node y Python, sin instalar paquetes. Cubren los siete controles ambientales y los nueve rasgos, alimento finito, persecución, herencia y especiación, costos de reproducción, migración de partidas, poderes, pausa, búsqueda espacial, límites de memoria, pestañas ocultas, igualdad entre calidades y contratos de Google/OpenRouter con respuestas simuladas, recorte de fondos, bordes suavizados, conservación de colores del cuerpo y reutilización de imágenes entre descendientes. No consumen créditos ni prueban credenciales reales.
 
 El benchmark compara `origin/main` con la copia de trabajo usando la misma semilla, 12 especies, 1.200 individuos y 690 manchas de algas, en un contexto VM de Node. Mide 40 actualizaciones y descarta las primeras diez; informa mediana y percentil 95. Mide CPU de la simulación, no renderizado ni FPS del navegador. Para medir solo la versión actual: `npm run benchmark -- --optimized-only`.
 

@@ -83,12 +83,72 @@ const SpriteTools = (() => {
     }
   }
 
-  function cutout(input,width,height) {
+  function isolateAnimal(data,width,height) {
+    const count=width*height,distance=new Uint16Array(count),labels=new Uint8Array(count),queue=new Int32Array(count);
+    const coreDepth=Math.max(2,Math.round(Math.min(width,height)/128))+1;
+    // Two distance passes find solid interiors. A one-pixel stem must not make
+    // unrelated scenery part of an animal, while sturdy fins remain attached.
+    for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
+      const p=y*width+x;
+      if(data[p*4+3]>=16) distance[p]=1+Math.min(x?distance[p-1]:0,y?distance[p-width]:0);
+    }
+    for(let y=height-1;y>=0;y--) for(let x=width-1;x>=0;x--) {
+      const p=y*width+x;
+      if(distance[p]) distance[p]=Math.min(distance[p],1+Math.min(x+1<width?distance[p+1]:0,y+1<height?distance[p+width]:0));
+    }
+    const cores=[];
+    for(let p=0;p<count;p++) {
+      if(distance[p]<coreDepth||labels[p]) continue;
+      let length=1;queue[0]=p;labels[p]=1;
+      const color=[0,0,0];
+      for(let head=0;head<length;head++) {
+        const q=queue[head],x=q%width,y=Math.floor(q/width);
+        for(let k=0;k<3;k++) color[k]+=data[q*4+k];
+        for(const n of [x?q-1:-1,x+1<width?q+1:-1,y?q-width:-1,y+1<height?q+width:-1]) {
+          if(n<0||labels[n]||distance[n]<coreDepth) continue;
+          labels[n]=1;queue[length++]=n;
+        }
+      }
+      cores.push({pixels:queue.slice(0,length),color:color.map(v=>v/length)});
+    }
+    cores.sort((a,b)=>b.pixels.length-a.pixels.length);
+    if(cores.length<2) return;
+    const primary=cores[0];
+    const colors=new Map();
+    for(const p of primary.pixels) {
+      const rgb=data.subarray(p*4,p*4+3),key=[...rgb].map(v=>v>>6).join(',');
+      const group=colors.get(key)||{count:0,sum:[0,0,0]};
+      group.count++;for(let k=0;k<3;k++) group.sum[k]+=rgb[k];colors.set(key,group);
+    }
+    const palette=[...colors.values()].filter(group=>group.count>=primary.pixels.length*0.08).map(group=>group.sum.map(v=>v/group.count));
+    if(!palette.length) palette.push(primary.color);
+    const matchesBody=core=>palette.some(color=>distance2(core.color,color)<=60**2);
+    const discarded=new Set(cores.filter(core=>core!==primary&&core.pixels.length>=Math.max(20,primary.pixels.length*0.08)&&!matchesBody(core)));
+    if(!discarded.size) return;
+    // Compete from every core over the original silhouette, restoring fine
+    // tips to their nearest body. Color alone never erases a connected fin.
+    labels.fill(0);let length=0;
+    for(const core of cores) {
+      if(core!==primary&&!discarded.has(core)&&!matchesBody(core)) continue;
+      for(const p of core.pixels) {labels[p]=discarded.has(core)?2:1;queue[length++]=p;}
+    }
+    for(let head=0;head<length;head++) {
+      const p=queue[head],x=p%width,y=Math.floor(p/width);
+      for(const q of [x?p-1:-1,x+1<width?p+1:-1,y?p-width:-1,y+1<height?p+width:-1]) {
+        if(q<0||labels[q]||data[q*4+3]<16) continue;
+        labels[q]=labels[p];queue[length++]=q;
+      }
+    }
+    for(let p=0;p<count;p++) if(labels[p]!==1) data[p*4+3]=0;
+  }
+
+  function cutout(input,width,height,{singleAnimal=false}={}) {
     if(!Number.isInteger(width)||!Number.isInteger(height)||width<8||height<8||width>512||height>512||input.length!==width*height*4) {
       throw new Error("La imagen tiene dimensiones inválidas para el recorte.");
     }
     const data=new Uint8ClampedArray(input),bg=borderColor(data,width,height);
     if(bg) removeBackground(data,width,height,bg);
+    if(singleAnimal) isolateAnimal(data,width,height);
     removeSpecks(data,width,height);
     let left=width,top=height,right=-1,bottom=-1,count=0;
     for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
