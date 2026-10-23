@@ -1002,7 +1002,36 @@ h1 em {
   margin-bottom: 4px;
 }
 
+.portrait-button {
+  display: block;
+  position: relative;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  margin-bottom: 10px;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.portrait-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.portrait-zoom {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 2px 5px;
+  background: #0c222de6;
+  color: var(--accent);
+  font-size: 11px;
+}
+
 .portrait {
+  display: block;
   width: 100%;
   max-height: 146px;
   object-fit: contain;
@@ -1010,7 +1039,43 @@ h1 em {
   background: radial-gradient(ellipse at center, #224858, #102a34);
   border-radius: 8px;
   border: 1px solid var(--line);
-  margin-bottom: 10px;
+}
+
+.portrait-viewer {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 24px 16px;
+  border: 0;
+  background: #06141bef;
+  color: var(--text);
+  cursor: zoom-out;
+}
+
+.portrait-viewer[open] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.portrait-viewer-image {
+  object-fit: contain;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 96px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: radial-gradient(ellipse at center, #224858, #102a34);
+}
+
+.portrait-viewer p {
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .artwork-warning {

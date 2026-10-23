@@ -914,7 +914,7 @@ function updateSelection() {
   const key = `${c.id}:${sp.id}`;
   if (selectionKey !== key) {
     const imageUrl = safeImageUrl(sp.portraitUrl);
-    const image = imageUrl ? `<img class="portrait" src="${imageUrl}" alt="Retrato de ${escapeHtml(sp.name)}" loading="lazy">`
+    const image = imageUrl ? `<button type="button" class="portrait-button" data-zoom-portrait aria-haspopup="dialog" aria-controls="portraitViewer" aria-label="Ampliar imagen de ${escapeHtml(sp.name)}" title="Ampliar imagen (×3)"><img class="portrait" src="${imageUrl}" alt="Retrato de ${escapeHtml(sp.name)}" loading="lazy"><span class="portrait-zoom" aria-hidden="true">×3</span></button>`
       : sp.artworkError ? `<p class="hint artwork-warning">Ilustración no disponible: ${escapeHtml(sp.artworkError)} Se usa un dibujo local.</p>` : "";
     panel.innerHTML = `
       <button class="text-button selection-back" data-return-species>← Ver todas las especies</button>
@@ -1083,6 +1083,11 @@ canvas.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 window.addEventListener("keydown", (event) => {
+  const portraitViewer = document.getElementById("portraitViewer");
+  if (portraitViewer.open) {
+    if (event.key === "Escape") { event.preventDefault(); portraitViewer.close(); }
+    return;
+  }
   if (event.key === "Escape") {
     cancelTool();
     const modal = document.getElementById("modal");
@@ -1332,7 +1337,37 @@ function revealSelection() {
   panel.scrollTop=(panel.scrollTop||0)+selection.getBoundingClientRect().top-panel.getBoundingClientRect().top-12;
 }
 
+let portraitReturnFocus = null;
+function openPortrait(button) {
+  const source = button.querySelector(".portrait");
+  if (!source?.complete || !source.naturalWidth) return;
+  const viewer = document.getElementById("portraitViewer");
+  const image = document.getElementById("portraitViewerImage");
+  const bounds = source.getBoundingClientRect();
+  // Enlarge the contained illustration, rather than the empty space beside it.
+  const width = Math.min(bounds.width, bounds.height * source.naturalWidth / source.naturalHeight);
+  const height = width * source.naturalHeight / source.naturalWidth;
+  const scale = Math.min(3, (innerWidth - 32) / width, (innerHeight - 96) / height);
+  image.src = source.currentSrc || source.src;
+  image.alt = source.alt;
+  image.style.width = `${width * scale}px`;
+  image.style.height = `${height * scale}px`;
+  portraitReturnFocus = button;
+  keys.clear(); dragging = false;
+  viewer.showModal();
+}
+
+const portraitViewer = document.getElementById("portraitViewer");
+portraitViewer.addEventListener("click", () => portraitViewer.close());
+portraitViewer.addEventListener("cancel", event => { event.preventDefault(); portraitViewer.close(); });
+portraitViewer.addEventListener("close", () => {
+  document.getElementById("portraitViewerImage").removeAttribute("src");
+  if (portraitReturnFocus?.isConnected) portraitReturnFocus.focus({preventScroll:true});
+  portraitReturnFocus = null;
+});
 document.getElementById("selectionPanel").addEventListener("click",event=>{
+  const portrait = event.target.closest("[data-zoom-portrait]");
+  if (portrait) { openPortrait(portrait); return; }
   if(event.target.closest("[data-return-species]")) document.getElementById("ecosystemPanel").scrollTop=0;
 });
 document.getElementById("toggleEnvironment").addEventListener("click", () => {
