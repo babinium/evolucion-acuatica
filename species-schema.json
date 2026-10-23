@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "description": {"type": "string"},
+    "visualDescription": {"type": "string"},
+    "habitat": {"type": "string"},
+    "traits": {
+      "type": "object",
+      "properties": {
+        "size": {"type": "number"},
+        "speed": {"type": "number"},
+        "attack": {"type": "number"},
+        "defense": {"type": "number"},
+        "perception": {"type": "number"},
+        "fertility": {"type": "number"},
+        "metabolism": {"type": "number"},
+        "foodEfficiency": {"type": "number"},
+        "toxicity": {"type": "number"}
+      },
+      "required": ["size", "speed", "attack", "defense", "perception", "fertility", "metabolism", "foodEfficiency", "toxicity"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["name", "description", "visualDescription", "habitat", "traits"],
+  "additionalProperties": false
+}

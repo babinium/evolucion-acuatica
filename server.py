@@ -20,6 +20,7 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 GOOGLE_API = "https://generativelanguage.googleapis.com/v1beta/models/"
 OPENROUTER_API = "https://openrouter.ai/api/v1/"
 PROMPTS = json.loads((ROOT / "generation-prompts.json").read_text())
+SPECIES_SCHEMA = json.loads((ROOT / "species-schema.json").read_text())
 generation_cache = GenerationCache(ROOT / ".ai-cache")
 
 if CONFIG_PATH.exists():
@@ -101,9 +102,40 @@ def normalized_world(body):
     return {"chaos": per_thousand(world.get("chaos"), 0.55), "mutationRate": per_thousand(world.get("mutationRate"), 0.09)}
 
 
-def build_species_prompt(body):
+def build_species_prompt(body, structured=False):
     counts = f"{clamp_count(body.get('producers', 0))} producer, {clamp_count(body.get('herbivores', 0))} herbivore, {clamp_count(body.get('carnivores', 0))} carnivore"
-    return PROMPTS["species"].replace("$COUNTS", counts).replace("$WORLD", canonical_json(normalized_world(body)))
+    return PROMPTS["speciesStructured" if structured else "species"].replace("$COUNTS", counts).replace("$WORLD", canonical_json(normalized_world(body)))
+
+
+def species_slots(body):
+    return [(f"{kind}_{i+1}", kind)
+            for key, kind in (("producers", "producer"), ("herbivores", "herbivore"), ("carnivores", "carnivore"))
+            for i in range(clamp_count(body.get(key, 0)))]
+
+
+def species_response_format(slots):
+    species = {"type": "object", "properties": {key: {"$ref": "#/$defs/species"} for key, _ in slots},
+               "required": [key for key, _ in slots], "additionalProperties": False}
+    return {"type": "json_schema", "json_schema": {"name": "aquatic_species", "strict": True, "schema": {
+        "type": "object", "properties": {"species": species}, "required": ["species"],
+        "additionalProperties": False, "$defs": {"species": SPECIES_SCHEMA}}}}
+
+
+def parse_structured_species(parsed, slots):
+    source = parsed.get("species") if isinstance(parsed, dict) else None
+    if not isinstance(source, dict) or set(source) != {key for key, _ in slots}:
+        raise ApiError("OpenRouter no respetó las especies pedidas. No se generaron imágenes ni se reenvió la solicitud.", 422)
+    result = []
+    for key, kind in slots:
+        sp = source[key]
+        traits = sp.get("traits") if isinstance(sp, dict) else None
+        if (not isinstance(sp, dict) or set(sp) != set(SPECIES_SCHEMA["required"])
+                or any(not isinstance(sp[field], str) or not sp[field].strip() for field in SPECIES_SCHEMA["required"] if field != "traits")
+                or not isinstance(traits, dict) or set(traits) != set(SPECIES_SCHEMA["properties"]["traits"]["required"])
+                or any(type(value) not in (int, float) or not math.isfinite(value) for value in traits.values())):
+            raise ApiError("OpenRouter no devolvió especies válidas. No se generaron imágenes ni se reenvió la solicitud.", 422)
+        result.append({**sp, "class": kind})
+    return result
 
 
 def thinking_config(model):
@@ -311,24 +343,31 @@ def generate_openrouter_species(body, settings):
     total = sum(clamp_count(body.get(key, 0)) for key in ("producers", "herbivores", "carnivores"))
     if not total:
         raise ApiError("Elegí al menos una especie.", 400)
-    payload = {"model": settings["textModel"], "messages": [{"role": "user", "content": build_species_prompt(body)}],
-               "temperature": 0.85, "max_tokens": min(4096, 256 + 320 * total), "response_format": {"type": "json_object"},
+    slots = species_slots(body)
+    payload = {"model": settings["textModel"], "messages": [{"role": "user", "content": build_species_prompt(body, structured=True)}],
+               "temperature": 0.85, "max_tokens": min(4096, 256 + 320 * total), "response_format": species_response_format(slots),
                "provider": {"sort": "price", "allow_fallbacks": False, "require_parameters": True}}
+    # Earlier successful results already passed exact diet-count validation.
+    if body.get("fresh") is not True:
+        current = generation_cache.get("species", {"provider": "openrouter", "payload": payload})
+        if current:
+            return current["value"]
+        legacy_payload = {**payload, "messages": [{"role": "user", "content": build_species_prompt(body)}],
+                          "response_format": {"type": "json_object"}}
+        cached = generation_cache.get("species", {"provider": "openrouter", "payload": legacy_payload})
+        if cached:
+            return cached["value"]
     def generate():
         data = openrouter_post("chat/completions", payload)
-        text = (data.get("choices") or [{}])[0].get("message", {}).get("content")
+        choice = (data.get("choices") or [{}])[0]
+        if choice.get("finish_reason") and choice["finish_reason"] != "stop":
+            raise ApiError("OpenRouter no completó la respuesta de especies. No se generaron imágenes ni se reenvió la solicitud.", 422)
+        text = choice.get("message", {}).get("content")
         try:
             parsed = extract_json(text if isinstance(text, str) else "")
         except (ValueError, TypeError):
             raise ApiError("OpenRouter no devolvió un JSON válido de especies. No se reenvió la solicitud.", 422)
-        species = parsed.get("species") if isinstance(parsed, dict) else None
-        valid = [sp for sp in species if isinstance(sp, dict) and isinstance(sp.get("name"), str)
-                 and sp.get("class") in ("producer", "herbivore", "carnivore")][:MAX_SPECIES_PER_REQUEST] if isinstance(species, list) else []
-        if not valid:
-            raise ApiError("OpenRouter no devolvió especies válidas.", 422)
-        for key, species_class in (("producers", "producer"), ("herbivores", "herbivore"), ("carnivores", "carnivore")):
-            if sum(sp["class"] == species_class for sp in valid) != clamp_count(body.get(key, 0)):
-                raise ApiError("OpenRouter devolvió cantidades de especies distintas de las pedidas. No se generaron imágenes.", 422)
+        valid = parse_structured_species(parsed, slots)
         return {"value": valid, "usage": openrouter_usage(data)}
     return generation_cache.get_or_create("species", {"provider": "openrouter", "payload": payload}, generate, fresh=body.get("fresh") is True)["value"]
 

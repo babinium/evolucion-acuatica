@@ -8,7 +8,32 @@ import {config,configStatus,checkProvider,generateImage,generateSpecies,generati
 
 const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1cAAAAASUVORK5CYII=';
 const image={data:[{b64_json:png,media_type:'image/png'}],usage:{cost:0.0184}};
-const species={choices:[{message:{content:'{"species":[{"name":"Alga","class":"producer"}]}'}}]};
+const specimen=name=>({name,description:'Especie de prueba.',visualDescription:'Compact blue aquatic body.',habitat:'Aguas medias',
+  traits:{size:5,speed:5,attack:0,defense:4,perception:6,fertility:12,metabolism:4,foodEfficiency:6,toxicity:0}});
+const species={choices:[{finish_reason:'stop',message:{content:JSON.stringify({species:{producer_1:specimen('Alga')}})}}]};
+
+test('strict species slots enforce unequal, zero and maximum diet counts in one request',async()=>{
+  for(const counts of [{producers:2,herbivores:1,carnivores:3},{producers:1,herbivores:1,carnivores:0},
+    {producers:0,herbivores:0,carnivores:1},{producers:4,herbivores:4,carnivores:4}]) {
+    const slots={};
+    for(const [key,type] of [['producers','producer'],['herbivores','herbivore'],['carnivores','carnivore']])
+      for(let i=1;i<=counts[key];i++) slots[`${type}_${i}`]=specimen(`${type} ${i}`);
+    await provider({choices:[{finish_reason:'stop',message:{content:JSON.stringify({species:slots})}}]},async calls=>{
+      const result=await generateSpecies(counts);
+      assert.equal(result.length,Object.keys(slots).length);
+      for(const [key,type] of [['producers','producer'],['herbivores','herbivore'],['carnivores','carnivore']])
+        assert.equal(result.filter(sp=>sp.class===type).length,counts[key]);
+      const format=calls[0].payload.response_format;
+      assert.equal(format.type,'json_schema');
+      assert.equal(format.json_schema.strict,true);
+      const schema=format.json_schema.schema.properties.species;
+      assert.deepEqual(schema.required,Object.keys(slots));
+      assert.deepEqual(Object.keys(schema.properties),Object.keys(slots));
+      assert.equal(schema.additionalProperties,false);
+      assert.equal(calls.length,1);
+    });
+  }
+});
 
 test('image instructions distinguish a solitary animal from an anchored colony',()=>{
   const animal=buildImagePrompt('Silver fish. Species type: herbivore.');
@@ -90,7 +115,8 @@ test('text generation is bounded JSON, cached by default and refreshed only expl
     assert.equal(calls.length,1);
     assert.equal(calls[0].url,'https://openrouter.ai/api/v1/chat/completions');
     assert.equal(calls[0].payload.max_tokens,576);
-    assert.deepEqual(calls[0].payload.response_format,{type:'json_object'});
+    assert.equal(calls[0].payload.response_format.type,'json_schema');
+    assert.equal(calls[0].payload.response_format.json_schema.strict,true);
     assert.equal(calls[0].payload.provider.allow_fallbacks,false);
     assert.equal(calls[0].payload.provider.require_parameters,true);
     assert.equal(calls[0].payload.tools,undefined);
@@ -102,13 +128,53 @@ test('text generation is bounded JSON, cached by default and refreshed only expl
 });
 
 test('OpenRouter rejects wrong diet counts and invalid JSON without requesting artwork',async()=>{
-  for(const content of ['not JSON','{"species":[{"name":"Pez","class":"herbivore"}]}']) {
+  const good=specimen('Alga');
+  for(const content of ['not JSON','{"species":[{"name":"Pez","class":"herbivore"}]}',
+    JSON.stringify({species:{}}),JSON.stringify({species:{herbivore_1:good}}),
+    JSON.stringify({species:{producer_1:good,producer_2:good}}),
+    JSON.stringify({species:{producer_1:{...good,traits:{...good.traits,size:'big'}}}}),
+    JSON.stringify({species:{producer_1:{...good,traits:{...good.traits,speed:true}}}}),
+    JSON.stringify({species:{producer_1:{...good,visualDescription:''}}})]) {
     await provider({choices:[{message:{content}}]},async calls=>{
       await assert.rejects(generateSpecies({producers:1}),error=>error.status===422);
       assert.equal(calls.length,1);
       assert.ok(calls[0].url.endsWith('chat/completions'));
     });
   }
+});
+
+test('truncated or refused species responses never start an image or retry',async()=>{
+  for(const choice of [{...species.choices[0],finish_reason:'length'},
+    {finish_reason:'stop',message:{refusal:'No content'}}]) {
+    await provider({choices:[choice]},async calls=>{
+      await assert.rejects(generateSpecies({producers:1}),error=>error.status===422);
+      assert.equal(calls.length,1);
+    });
+  }
+});
+
+test('old validated species are reused and new structured results are shared across backends',async()=>{
+  await provider(species,async calls=>{
+    const body={producers:1};
+    const created=await generateSpecies(body);
+    const reused=execFileSync('python3',['-c',
+      'import json,sys;import server;d=json.load(sys.stdin);server.CONFIG.clear();server.CONFIG.update(aiProvider="openrouter",openrouterApiKey="test-cache-key");server.generation_cache=server.GenerationCache(d["directory"]);server.post_json=lambda *a,**kw:sys.exit(2);print(json.dumps(server.generate_species({"producers":1})))'],
+      {input:JSON.stringify({directory:generationCache.directory}),encoding:'utf8'});
+    assert.deepEqual(JSON.parse(reused),created);
+    // This is the former public request contract, kept solely for cache lookup.
+    const prompts=JSON.parse(await readFile(new URL('../generation-prompts.json',import.meta.url),'utf8'));
+    const legacyPayload={...calls[0].payload,response_format:{type:'json_object'},messages:[{role:'user',content:
+      prompts.species.replace('$COUNTS','1 producer, 0 herbivore, 0 carnivore').replace('$WORLD','{"chaos":550,"mutationRate":90}')}]};
+    const oldSpecies=[{name:'Alga anterior',class:'producer'}];
+    await generationCache.getOrCreate('species',{provider:'openrouter',payload:legacyPayload},async()=>({value:oldSpecies}));
+    assert.deepEqual(await generateSpecies(body),created);
+    await rm(join(generationCache.directory,generationCache.key('species',{provider:'openrouter',payload:calls[0].payload})+'.json'));
+    assert.deepEqual(await generateSpecies(body),oldSpecies);
+    assert.equal(calls.length,1);
+    await generateSpecies({...body,fresh:true});
+    assert.deepEqual(await generateSpecies(body),created);
+    assert.equal(calls.length,2);
+  });
 });
 
 test('balance and provider failures do not retry or use the configured Google key',async()=>{

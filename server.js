@@ -15,6 +15,7 @@ if (process.env.OPENROUTER_API_KEY) config.openrouterApiKey = process.env.OPENRO
 const GOOGLE_API = "https://generativelanguage.googleapis.com/v1beta/models/";
 const OPENROUTER_API = "https://openrouter.ai/api/v1/";
 const PROMPTS = JSON.parse(await readFile(join(root,"generation-prompts.json"),"utf8"));
+const SPECIES_SCHEMA = JSON.parse(await readFile(join(root,"species-schema.json"),"utf8"));
 export const generationCache = new GenerationCache(join(root,".ai-cache"));
 
 export function configStatus() {
@@ -77,9 +78,40 @@ function normalizedWorld(body) {
   return {chaos:perThousand(body.world?.chaos,0.55),mutationRate:perThousand(body.world?.mutationRate,0.09)};
 }
 
-function buildSpeciesPrompt(body) {
+function buildSpeciesPrompt(body,structured=false) {
   const counts=`${clampCount(body.producers)} producer, ${clampCount(body.herbivores)} herbivore, ${clampCount(body.carnivores)} carnivore`;
-  return PROMPTS.species.replace('$COUNTS',counts).replace('$WORLD',canonicalJson(normalizedWorld(body)));
+  return PROMPTS[structured?'speciesStructured':'species'].replace('$COUNTS',counts).replace('$WORLD',canonicalJson(normalizedWorld(body)));
+}
+
+function speciesSlots(body) {
+  return [['producers','producer'],['herbivores','herbivore'],['carnivores','carnivore']].flatMap(([key,type])=>
+    Array.from({length:clampCount(body[key])},(_,i)=>[`${type}_${i+1}`,type]));
+}
+
+function speciesResponseFormat(slots) {
+  const species={type:'object',properties:Object.fromEntries(slots.map(([key])=>[key,{$ref:'#/$defs/species'}])),
+    required:slots.map(([key])=>key),additionalProperties:false};
+  return {type:'json_schema',json_schema:{name:'aquatic_species',strict:true,schema:{
+    type:'object',properties:{species},required:['species'],additionalProperties:false,$defs:{species:SPECIES_SCHEMA}
+  }}};
+}
+
+function parseStructuredSpecies(parsed,slots) {
+  const source=parsed?.species;
+  if(!source||typeof source!=='object'||Array.isArray(source)||Object.keys(source).length!==slots.length
+    ||slots.some(([key])=>!Object.hasOwn(source,key))) {
+    throw new ApiError('OpenRouter no respetó las especies pedidas. No se generaron imágenes ni se reenvió la solicitud.',422);
+  }
+  return slots.map(([key,type])=>{
+    const sp=source[key],traits=sp?.traits;
+    if(!sp||Object.keys(sp).length!==SPECIES_SCHEMA.required.length
+      ||SPECIES_SCHEMA.required.some(field=>field==='traits'?false:typeof sp[field]!=='string'||!sp[field].trim())
+      ||!traits||Object.keys(traits).length!==SPECIES_SCHEMA.properties.traits.required.length
+      ||SPECIES_SCHEMA.properties.traits.required.some(field=>!Number.isFinite(traits[field]))) {
+      throw new ApiError('OpenRouter no devolvió especies válidas. No se generaron imágenes ni se reenvió la solicitud.',422);
+    }
+    return {...sp,class:type};
+  });
 }
 
 function thinkingConfig(model) {
@@ -240,19 +272,27 @@ export async function generateSpecies(body) {
 async function generateOpenrouterSpecies(body,settings) {
   const total=['producers','herbivores','carnivores'].reduce((sum,key)=>sum+clampCount(body[key]),0);
   if (!total) throw new ApiError('Elegí al menos una especie.',400);
-  const payload={model:settings.textModel,messages:[{role:'user',content:buildSpeciesPrompt(body)}],
-    temperature:0.85,max_tokens:Math.min(4096,256+320*total),response_format:{type:'json_object'},
+  const slots=speciesSlots(body);
+  const payload={model:settings.textModel,messages:[{role:'user',content:buildSpeciesPrompt(body,true)}],
+    temperature:0.85,max_tokens:Math.min(4096,256+320*total),response_format:speciesResponseFormat(slots),
     provider:{sort:'price',allow_fallbacks:false,require_parameters:true}};
+  // Previous successful results already passed exact diet-count validation.
+  // Reuse them rather than spending quota merely because the wire format changed.
+  if(body.fresh!==true) {
+    const current=await generationCache.get('species',{provider:'openrouter',payload});
+    if(current) return current.value;
+    const legacyPayload={...payload,messages:[{role:'user',content:buildSpeciesPrompt(body)}],response_format:{type:'json_object'}};
+    const cached=await generationCache.get('species',{provider:'openrouter',payload:legacyPayload});
+    if(cached) return cached.value;
+  }
   const record=await generationCache.getOrCreate('species',{provider:'openrouter',payload},async()=>{
     const data=await postJson(OPENROUTER_API+'chat/completions',payload,{Authorization:`Bearer ${config.openrouterApiKey}`},'OpenRouter');
-    const text=data.choices?.[0]?.message?.content;
+    const choice=data.choices?.[0];
+    if(choice?.finish_reason&&choice.finish_reason!=='stop') throw new ApiError('OpenRouter no completó la respuesta de especies. No se generaron imágenes ni se reenvió la solicitud.',422);
+    const text=choice?.message?.content;
     let parsed;
     try {parsed=extractJson(typeof text==='string'?text:'');} catch {throw new ApiError('OpenRouter no devolvió un JSON válido de especies. No se reenvió la solicitud.',422);}
-    const species=Array.isArray(parsed?.species)?parsed.species.filter(sp=>sp&&typeof sp.name==='string'&&['producer','herbivore','carnivore'].includes(sp.class)).slice(0,MAX_SPECIES_PER_REQUEST):[];
-    if(!species.length) throw new ApiError('OpenRouter no devolvió especies válidas.',422);
-    for(const [key,type] of [['producers','producer'],['herbivores','herbivore'],['carnivores','carnivore']]) {
-      if(species.filter(sp=>sp.class===type).length!==clampCount(body[key])) throw new ApiError('OpenRouter devolvió cantidades de especies distintas de las pedidas. No se generaron imágenes.',422);
-    }
+    const species=parseStructuredSpecies(parsed,slots);
     return {value:species,usage:openrouterUsage(data)};
   },{fresh:body.fresh===true});
   return record.value;

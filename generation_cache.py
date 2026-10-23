@@ -16,21 +16,36 @@ class GenerationCache:
         self.directory = Path(directory)
         self.lock = threading.Lock()
 
+    def key(self, kind, request):
+        return kind + "-" + hashlib.sha256((kind + "\n" + canonical_json(request)).encode()).hexdigest()
+
+    def get(self, kind, request):
+        return self.read(self.key(kind, request), kind)
+
+    def read(self, key, kind):
+        path = self.directory / (key + ".json")
+        try:
+            record = json.loads(path.read_text())
+        except FileNotFoundError:
+            return None
+        if record.get("version") != 1 or record.get("kind") != kind or "value" not in record:
+            raise ValueError("Caché de IA inválida.")
+        try:
+            path.touch()
+        except OSError:
+            pass
+        return record
+
     def get_or_create(self, kind, request, generate, fresh=False):
-        key = kind + "-" + hashlib.sha256((kind + "\n" + canonical_json(request)).encode()).hexdigest()
+        key = self.key(kind, request)
         # The local UI generates in series; a second tab must not duplicate it.
         with self.lock:
             self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             path = self.directory / (key + ".json")
-            if not fresh and path.exists():
-                record = json.loads(path.read_text())
-                if record.get("version") != 1 or record.get("kind") != kind or "value" not in record:
-                    raise ValueError("Caché de IA inválida.")
-                try:
-                    path.touch()
-                except OSError:
-                    pass
-                return record
+            if not fresh:
+                record = self.read(key, kind)
+                if record:
+                    return record
             result = generate()
             record = {"version": 1, "kind": kind, "value": result["value"], "usage": result.get("usage")}
             temp = None

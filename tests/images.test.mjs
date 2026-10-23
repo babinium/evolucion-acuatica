@@ -131,6 +131,40 @@ test('a single generated image creates the portrait and sprite locally',async()=
   assert.match(game.run('state.species[0].portraitUrl'),/^data:image\/png/);
 });
 
+test('world creation keeps requested diets and generates one illustration per accepted species',async()=>{
+  const calls=[];
+  const species=[{name:'Alga A',class:'producer'},{name:'Alga B',class:'producer'},{name:'Pez',class:'herbivore'}];
+  const game=createGame({fetch:async(url,options)=>{
+    calls.push({url,body:options?.body?JSON.parse(options.body):null});
+    return {ok:true,json:async()=>url==='/api/config-status'?{canUseAiText:true,canUseAiImages:true}:
+      url==='/api/generate-species'?{species}:{image:'synthetic-image'}};
+  }});
+  game.element('setupProducers').value='2';
+  game.element('setupHerbivores').value='1';
+  game.element('setupCarnivores').value='0';
+  game.run('prepareSpeciesArtwork=async()=>({spriteUrl:"data:image/png;base64,c3ByaXRl",portraitUrl:"data:image/png;base64,cG9ydHJhaXQ="});');
+  await game.run('startWorld(true,true)');
+  assert.equal(game.run('state.started'),true);
+  assert.deepEqual(JSON.parse(game.run('JSON.stringify(state.species.map(sp=>sp.class))')),['producer','producer','herbivore']);
+  assert.equal(game.run('state.species.every(sp=>sp.artworkVersion===1)'),true);
+  assert.equal(calls.filter(c=>c.url==='/api/generate-species').length,1);
+  assert.equal(calls.filter(c=>c.url==='/api/generate-images').length,3);
+});
+
+test('a failed species response stops world creation before any image request',async()=>{
+  const calls=[];
+  const message='OpenRouter no respetó las especies pedidas. No se generaron imágenes ni se reenvió la solicitud.';
+  const game=createGame({fetch:async url=>{
+    calls.push(url);
+    return {ok:url==='/api/config-status',status:422,json:async()=>url==='/api/config-status'?{}:{error:message}};
+  }});
+  await game.run('startWorld(true,true)');
+  assert.equal(game.run('state.started'),false);
+  assert.equal(game.element('busyMessage').textContent,`Fallo IA: ${message}`);
+  assert.equal(calls.filter(url=>url==='/api/generate-species').length,1);
+  assert.equal(calls.filter(url=>url==='/api/generate-images').length,0);
+});
+
 test('a bad cutout does not regenerate or leave a partial portrait/sprite pair',async()=>{
   const calls=[];
   const game=createGame({fetch:async url=>{calls.push(url);return {ok:true,json:async()=>url==='/api/config-status'?{}:{image:'bad-image'}};}});

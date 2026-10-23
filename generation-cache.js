@@ -11,8 +11,24 @@ export function canonicalJson(value) {
 export class GenerationCache {
   constructor(directory) { this.directory=directory; this.pending=new Map(); }
 
+  key(kind,request) {
+    return kind+'-'+createHash('sha256').update(kind+'\n'+canonicalJson(request)).digest('hex');
+  }
+
+  async get(kind,request) { return this.read(this.key(kind,request),kind); }
+
+  async read(key,kind) {
+    const path=join(this.directory,key+'.json');
+    try {
+      const record=JSON.parse(await readFile(path,'utf8'));
+      if(record.version!==1||record.kind!==kind||!('value' in record)) throw new Error('Caché de IA inválida.');
+      await utimes(path,new Date(),new Date()).catch(()=>{});
+      return record;
+    } catch(error) {if(error.code!=='ENOENT') throw error;return null;}
+  }
+
   async getOrCreate(kind,request,generate,{fresh=false}={}) {
-    const key=kind+'-'+createHash('sha256').update(kind+'\n'+canonicalJson(request)).digest('hex');
+    const key=this.key(kind,request);
     if(this.pending.has(key)) return this.pending.get(key);
     const operation=this.resolve(key,kind,generate,fresh);
     this.pending.set(key,operation);
@@ -23,12 +39,8 @@ export class GenerationCache {
     await mkdir(this.directory,{recursive:true,mode:0o700});
     const path=join(this.directory,key+'.json');
     if(!fresh) {
-      try {
-        const record=JSON.parse(await readFile(path,'utf8'));
-        if(record.version!==1||record.kind!==kind||!('value' in record)) throw new Error('Caché de IA inválida.');
-        await utimes(path,new Date(),new Date()).catch(()=>{});
-        return record;
-      } catch(error) {if(error.code!=='ENOENT') throw error;}
+      const record=await this.read(key,kind);
+      if(record) return record;
     }
     const result=await generate();
     // No headers, credential or complete provider response are ever stored.

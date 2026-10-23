@@ -1,13 +1,15 @@
-"""Local visual fixture: real UI + synthetic PNGs, with no Google requests.
+"""Local visual fixture: real UI and API parsing + synthetic provider responses.
 
 Run: python3 tests/preview_images.py, then open http://127.0.0.1:5174.
 Uses a separate origin so it cannot overwrite the normal game's saved world.
 """
 import base64
 import math
+import json
 import struct
 import sys
 import zlib
+import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server
@@ -56,7 +58,7 @@ def species_fixture(body):
         for i in range(server.clamp_count(body.get(key, 0))):
             result.append({"name": f"{name} {i+1}", "class": kind,
                            "description": "Ilustración sintética para comprobar recorte, orientación y escala. No se llamó a Google.",
-                           "visualDescription": kind, "spritePrompt": kind,
+                           "visualDescription": kind, "habitat": "Aguas medias",
                            "traits": {"size": 5, "speed": 8 if kind == "carnivore" else 5, "attack": 6 if kind == "carnivore" else 0,
                                       "defense": 4, "perception": 6, "fertility": 14, "metabolism": 4, "foodEfficiency": 6, "toxicity": 0}})
     return result
@@ -66,7 +68,7 @@ class PreviewHandler(server.Handler):
     def do_GET(self):
         if self.path.split("?")[0] == "/":
             html = (server.ROOT / "index.html").read_text()
-            banner = '<aside style="position:fixed;bottom:80px;right:12px;z-index:9999;background:#3b2948;color:white;padding:7px 12px;border-radius:6px;font:12px sans-serif">PRUEBA VISUAL · Imágenes sintéticas · Sin llamadas a Google</aside>'
+            banner = '<aside style="position:fixed;bottom:80px;right:12px;z-index:9999;background:#3b2948;color:white;padding:7px 12px;border-radius:6px;font:12px sans-serif">PRUEBA VISUAL · Imágenes sintéticas · Sin gasto de API</aside>'
             raw = html.replace("</body>", banner + "</body>").encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -79,15 +81,28 @@ class PreviewHandler(server.Handler):
 
 if __name__ == "__main__":
     server.CONFIG.clear()
-    server.CONFIG["geminiApiKey"] = "synthetic-fixture-no-real-key"
+    server.CONFIG.update(aiProvider="openrouter", openrouterApiKey="synthetic-fixture-no-real-key")
+    cache = tempfile.TemporaryDirectory(prefix="evo-visual-cache-")
+    server.generation_cache = server.GenerationCache(cache.name)
     images = {kind: png_fixture(kind) for kind in ("producer", "herbivore", "carnivore")}
-    server.generate_species = species_fixture
-    server.generate_image = lambda prompt: images[next((kind for kind in images if f"Species type: {kind}" in prompt), "herbivore")]
-    server.check_google = lambda: {"ok": True, "message": "Prueba visual: no se consultó a Google ni se consumió cuota."}
+    def synthetic_provider(url, payload, headers=None, **kwargs):
+        if url == server.OPENROUTER_API + "chat/completions":
+            slots = payload["response_format"]["json_schema"]["schema"]["properties"]["species"]["required"]
+            counts = {key: sum(slot.startswith(kind + "_") for slot in slots)
+                      for key, kind in (("producers", "producer"), ("herbivores", "herbivore"), ("carnivores", "carnivore"))}
+            species = {}
+            for slot, sp in zip(slots, species_fixture(counts)):
+                species[slot] = {key: sp[key] for key in server.SPECIES_SCHEMA["required"]}
+            return 200, {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps({"species": species})}}]}
+        if url == server.OPENROUTER_API + "images":
+            kind = next((kind for kind in images if f"Species type: {kind}" in payload["prompt"]), "herbivore")
+            return 200, {"data": [{"b64_json": images[kind].split(",", 1)[1], "media_type": "image/png"}]}
+        raise RuntimeError("La prueba recibió una solicitud no prevista.")
+    server.post_json = synthetic_provider
     server.check_provider = lambda: {"ok": True, "message": "Prueba visual: no se consultó a ningún proveedor ni se consumió saldo."}
     # Make accidental real network calls impossible in this fixture server.
     def offline(*args, **kwargs):
         raise RuntimeError("Esta prueba no permite conexiones con proveedores.")
     server.urllib.request.urlopen = offline
-    print("Prueba visual sin Google: http://127.0.0.1:5174", flush=True)
+    print("Prueba visual sin gasto de API: http://127.0.0.1:5174", flush=True)
     server.ThreadingHTTPServer(("127.0.0.1", 5174), PreviewHandler).serve_forever()

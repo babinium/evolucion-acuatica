@@ -493,7 +493,7 @@ async function startWorld(useAI, withImages = true) {
     seedWorld(species);
     if (missingImages) state.lastEvent = `Ilustraciones listas: ${species.length-missingImages}/${species.length}. El resto usa dibujos locales; la ficha muestra el motivo.`;
   } catch (error) {
-    const message = `Fallo IA: ${error.message}. Vuelve a intentar crear el mundo.`;
+    const message = `Fallo IA: ${error.message}`;
     setupStatus.textContent = message;
     showBusyError("No se pudo crear el mundo", message);
     logError(message);
