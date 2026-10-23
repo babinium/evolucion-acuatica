@@ -1,4 +1,11 @@
 {
-  "togetherApiKey": "pon-tu-clave-together-aqui",
-  "geminiApiKey": "pon-tu-clave-gemini-aqui"
+  "aiProvider": "openrouter",
+  "openrouterApiKey": "",
+  "openrouterModel": "openai/gpt-4.1-nano",
+  "openrouterImageModel": "qwen/qwen-image-2.1-turbo",
+  "openrouterImageSize": "1K",
+  "geminiApiKey": "",
+  "geminiModel": "gemini-3.1-flash-lite",
+  "geminiImageModel": "gemini-3.1-flash-image",
+  "geminiImageSize": "512"
 }

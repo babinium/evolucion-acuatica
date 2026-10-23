@@ -1,5 +1,11 @@
 node_modules/
 config.local.json
+config.local*.json
+!config.local.example.json
+.env
+.env.*
+!.env.example
+.ai-cache/
 __pycache__/
 *.pyc
 .local-tools/
