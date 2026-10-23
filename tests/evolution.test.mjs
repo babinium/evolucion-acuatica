@@ -169,6 +169,21 @@ test('hiding the tab during text generation defers the image until it becomes vi
   assert.equal(calls.length,2);assert.equal(game.run('state.species[3].evolutionImageStatus'),'ready');
 });
 
+test('restarting during identity generation clears its busy state without another paid request',async()=>{
+  let release;
+  const {game,calls}=await lineage({ai:true,fetch:async()=>{
+    await new Promise(resolve=>{release=resolve;});return {ok:true,json:async()=>({identity})};
+  }});
+  for(let i=0;i<3;i++) game.run('window.advance()');
+  const pending=game.run('processEvolutionQueue()');
+  game.run('restartCurrentWorld()');
+  assert.equal(game.run('state.species[3].evolutionTextStatus'),'failed');
+  assert.equal(game.run('state.species[3].evolutionImageStatus'),'failed');
+  release();await pending;await game.run('processEvolutionQueue()');
+  assert.equal(calls.length,1);
+  assert.match(game.run('evolutionSummary(state.species[3])'),/interrumpió/);
+});
+
 test('legacy global variation numbers migrate by ancestry without generating identities',async()=>{
   const {game,calls}=await lineage();for(let i=0;i<2;i++) game.run('window.advance()');
   game.run(`state.species[1].name='Origen var. 28';state.species[2].name='Origen var. 42';
