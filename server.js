@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { extname, join, resolve } from "node:path";
+import { extname, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const root = process.cwd();
 const configPath = join(root, "config.local.json");
-const config = existsSync(configPath)
+export const config = existsSync(configPath)
   ? JSON.parse(await readFile(configPath, "utf8"))
   : { togetherApiKey: "", geminiApiKey: "" };
 
@@ -21,7 +22,9 @@ function configStatus() {
     hasTogetherApiKey,
     missing,
     canUseAiText: hasGeminiApiKey,
-    canUseAiImages: hasGeminiApiKey && hasTogetherApiKey
+    canUseAiImages: hasGeminiApiKey && hasTogetherApiKey,
+    geminiModel: config.geminiModel || "gemini-3.1-flash-lite",
+    togetherModel: config.togetherModel || "black-forest-labs/FLUX.2-dev"
   };
 }
 
@@ -53,7 +56,7 @@ async function readBody(req) {
 }
 
 function clampCount(value) {
-  return Math.max(0, Math.min(MAX_SPECIES_PER_TYPE, Number(value) || 0));
+  return Math.max(0, Math.min(MAX_SPECIES_PER_TYPE, Math.round(Number(value)) || 0));
 }
 
 function buildSpeciesPrompt(body) {
@@ -85,18 +88,14 @@ Return ONLY valid JSON, no markdown. Use this schema:
         "speed": "producers 0-2, herbivores 1-10, carnivores 6-10",
         "attack": 0-10,
         "defense": 0-10,
-        "camouflage": 0-10,
         "perception": 1-10,
-        "fertility": 1-10,
+        "fertility": "producers 10-30, herbivores/carnivores 5-20",
         "metabolism": 1-10,
         "foodEfficiency": 1-10,
-        "temperatureTolerance": 1-10,
-        "toxicity": 0-10,
-        "sociability": 0-10,
-        "aggression": 0-10
+        "toxicity": 0-10
       },
       "portraitPrompt": "English prompt for detailed isolated scientific aquatic creature illustration, white background, no text",
-      "spritePrompt": "English prompt for extremely simple top-down game sprite of the same species, isolated white background, no text"
+      "spritePrompt": "English prompt for extremely simple top-down game sprite of the same species, solid chroma blue background (#0047ff), filled body, head facing right, no text"
     }
   ]
 }
@@ -119,62 +118,70 @@ function extractJson(text) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
-async function generateSpecies(body) {
-  if (!config.geminiApiKey) throw new Error("Missing Gemini API key.");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${config.geminiApiKey}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: buildSpeciesPrompt(body) }] }],
-      generationConfig: {
-        temperature: 0.95,
-        responseMimeType: "application/json"
-      }
-    })
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || "Gemini request failed.");
-  const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
-  const parsed = extractJson(text);
-  return Array.isArray(parsed.species) ? parsed.species.slice(0, MAX_SPECIES_PER_REQUEST) : [];
+export class ApiError extends Error {
+  constructor(message, status = 502) { super(message); this.status = status; }
 }
 
-async function generateImage(prompt, mode) {
-  if (!config.togetherApiKey) throw new Error("Missing Together/Flux API key.");
-  const response = await fetch("https://api.together.xyz/v1/images/generations", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${config.togetherApiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "black-forest-labs/FLUX.1-schnell",
-      prompt,
-      steps: 4,
-      n: 1,
-      response_format: "url",
-      aspect_ratio: mode === "sprite" ? "1:1" : "4:3"
-    })
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || "Together image request failed.");
-  return data.data?.[0]?.url || "";
+export async function retryRequest(operation, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return await operation(); }
+    catch (error) {
+      if (attempt === 2 || ![429, 500, 502, 503, 504].includes(error.status)) throw error;
+      await sleep(1500 * 2 ** attempt);
+    }
+  }
+}
+
+async function postJson(url, payload, headers, provider) {
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "evolucion-local/0.2", ...headers },
+      body: JSON.stringify(payload), signal: AbortSignal.timeout(60000)
+    });
+  } catch {
+    throw new ApiError(`${provider}: no se pudo conectar o se agotó el tiempo de espera.`, 504);
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = typeof data.error === "string" ? data.error : data.error?.message;
+    throw new ApiError(`${provider} HTTP ${response.status}: ${message || "La solicitud falló."}`, response.status);
+  }
+  return data;
+}
+
+export async function generateSpecies(body) {
+  if (!config.geminiApiKey) throw new ApiError("Agregá geminiApiKey en config.local.json para usar IA.", 400);
+  const model = config.geminiModel || "gemini-3.1-flash-lite";
+  const data = await retryRequest(() => postJson(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    { contents: [{ parts: [{ text: buildSpeciesPrompt(body) }] }], generationConfig: { temperature: 0.95, responseMimeType: "application/json" } },
+    { "x-goog-api-key": config.geminiApiKey }, "Gemini"
+  ));
+  const text = data.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("") || "";
+  let parsed;
+  try { parsed = extractJson(text); }
+  catch { throw new ApiError("Gemini no devolvió un JSON válido de especies."); }
+  const species = Array.isArray(parsed.species) ? parsed.species.filter(sp => sp && typeof sp.name === "string" && ["producer", "herbivore", "carnivore"].includes(sp.class)).slice(0, MAX_SPECIES_PER_REQUEST) : [];
+  if (!species.length) throw new ApiError("Gemini no devolvió especies válidas.");
+  return species;
+}
+
+export async function generateImage(prompt, mode) {
+  if (!config.togetherApiKey) throw new ApiError("Agregá togetherApiKey en config.local.json para generar imágenes.", 400);
+  const model = config.togetherModel || "black-forest-labs/FLUX.2-dev";
+  const data = await postJson("https://api.together.ai/v1/images/generations", {
+    model, prompt, n: 1, width: mode === "sprite" ? 512 : 768, height: mode === "sprite" ? 512 : 576,
+    response_format: "base64", output_format: "png",
+    ...(model.includes("schnell") ? { steps: 4 } : {})
+  }, { Authorization: `Bearer ${config.togetherApiKey}` }, "Together");
+  const encoded = data.data?.[0]?.b64_json;
+  if (typeof encoded !== "string" || !encoded) throw new ApiError("Together no devolvió una imagen válida en base64.");
+  return `data:image/png;base64,${encoded}`;
 }
 
 async function generateImageWithRetry(prompt, mode) {
-  let lastError = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, 8000 * (attempt - 1)));
-      return await generateImage(prompt, mode);
-    } catch (error) {
-      lastError = error;
-      const message = String(error.message || error);
-      if (!["429", "500", "502", "503", "504"].some((code) => message.includes(code))) throw error;
-    }
-  }
-  throw lastError;
+  return retryRequest(() => generateImage(prompt, mode));
 }
 
 async function handleApi(req, res) {
@@ -196,7 +203,7 @@ async function handleApi(req, res) {
     }
     sendJson(res, 404, { error: "Unknown API route." });
   } catch (error) {
-    sendJson(res, 500, { error: error.message });
+    sendJson(res, error.status || 500, { error: error.message });
   }
 }
 
@@ -208,7 +215,7 @@ async function serveStatic(req, res) {
   }
   const pathname = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
   const target = resolve(join(root, pathname));
-  if (!target.startsWith(root) || target.endsWith("config.local.json")) {
+  if (!target.startsWith(root + sep) || target.endsWith("config.local.json") || pathname.split("/").some(part => part.startsWith("."))) {
     res.writeHead(403);
     res.end("Forbidden");
     return;
@@ -223,7 +230,7 @@ async function serveStatic(req, res) {
   }
 }
 
-const server = createServer((req, res) => {
+export const server = createServer((req, res) => {
   if (req.method === "POST" && req.url?.startsWith("/api/")) {
     handleApi(req, res);
     return;
@@ -231,6 +238,7 @@ const server = createServer((req, res) => {
   serveStatic(req, res);
 });
 
-server.listen(5173, "127.0.0.1", () => {
-  console.log("Evolucion acuatica: http://127.0.0.1:5173");
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const port = Number(process.env.PORT) || 5173;
+  server.listen(port, "127.0.0.1", () => console.log(`Evolución acuática: http://127.0.0.1:${port}`));
+}

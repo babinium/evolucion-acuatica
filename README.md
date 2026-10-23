@@ -1,104 +1,75 @@
-# Evolucion acuatica
+# Evolución acuática
 
-Simulador evolutivo acuatico con vista dios, especies generadas por IA, recursos, productores, herbivoros, carnivoros, mutaciones e intervenciones del jugador.
+Un simulador de evolución con vista de dios: productores, herbívoros, depredadores, mutaciones e intervenciones. HTML, CSS y JavaScript con canvas, sin dependencias ni compilación.
 
-Web demo:
-
-```text
-https://babinium.github.io/evolucion-acuatica/
-```
-
-La web publica muestra el cliente del juego. Para usar Gemini y Together con claves propias, cada jugador debe descargar el proyecto y ejecutarlo localmente. Las claves privadas no deben ponerse en una web publica.
-
-## Requisitos
-
-- Python 3 instalado.
-- Una clave de Gemini para crear especies con texto.
-- Una clave de Together AI para crear imagenes con FLUX.
-
-## Abrir la web publica
-
-Abre:
-
-```text
-https://babinium.github.io/evolucion-acuatica/
-```
-
-Los botones `Crear mundo con IA` e `IA sin imagenes` necesitan el servidor local porque usan claves privadas.
-
-## Descargar y jugar
-
-```sh
-git clone https://github.com/babinium/evolucion-acuatica.git
-cd evolucion-acuatica
-cp config.local.example.json config.local.json
-```
-
-Abre `config.local.json` y pega tus claves:
-
-```json
-{
-  "togetherApiKey": "tu-clave-de-together",
-  "geminiApiKey": "tu-clave-de-gemini"
-}
-```
-
-Inicia el servidor local:
+## Jugar
 
 ```sh
 python3 server.py
 ```
 
-Abre el juego en el navegador:
+Abrí [el juego local](http://127.0.0.1:5173) y elegí **Crear mi ecosistema**. No necesitás claves, conexión con proveedores de IA ni instalar paquetes. También funciona como sitio estático; la [demo pública](https://babinium.github.io/evolucion-acuatica/) muestra la versión publicada en `main`.
 
-```text
-http://127.0.0.1:5173
-```
+Como alternativa podés usar Node.js 20 o posterior: `node server.js` o `npm run start:node`. `npm start` inicia el servidor Python.
 
-## Como conseguir las APIs
+## PC de bajos recursos
 
-Gemini:
+El modo inicial **Bajo consumo** limita el dibujo a 30 FPS y reduce la resolución interna. **Equilibrado** permite hasta 45 FPS y **Más detalle** hasta 60 FPS. Podés cambiarlo desde Ambiente; la preferencia queda guardada en el navegador. Son límites, no una garantía de FPS en todos los equipos.
 
-1. Entra a `https://aistudio.google.com/app/apikey`.
-2. Crea una API key.
-3. Pegala en `geminiApiKey`.
+- La simulación tiene pasos de 30 Hz independientes de la calidad visual. Si el equipo no alcanza, limita el trabajo de recuperación para que los controles sigan respondiendo.
+- Una grilla espacial busca alimento, amenazas y vecinos por cercanía. Las especies y las poblaciones de cada cuadrante tienen índices reutilizables.
+- Los peces y las plantas locales se dibujan una vez por especie y se reutilizan. Los paneles se actualizan con menor frecuencia y no usan desenfoque de fondo.
+- La pestaña oculta suspende completamente la simulación y el dibujo. Al volver no intenta recuperar todo el tiempo transcurrido. Al pausar, el mapa solo se vuelve a dibujar cuando cambia.
+- Para mantener acotada la memoria hay un máximo de 2.400 individuos, 2.400 manchas de algas y 1.200 cadáveres. Al alcanzar el límite de individuos se detienen los nacimientos; no se eliminan individuos vivos para reducir consumo. Los límites son iguales en todas las calidades.
 
-Together AI:
+Para una partida liviana, empezá con un mundo compacto o mediano y una especie de cada grupo.
 
-1. Entra a `https://api.together.ai/settings/api-keys`.
-2. Crea una API key.
-3. Pegala en `togetherApiKey`.
+## Controles
 
-## Que hace cada clave
+- Arrastrar o WASD/flechas: mover la cámara, incluso en pausa.
+- Rueda y botones −/+: acercar o alejar. El botón de mira centra el mundo.
+- Clic en un individuo o en la lista de especies: inspeccionar rasgos y población.
+- Barra espaciadora: pausar o reanudar. Los controles de velocidad no cambian la velocidad de la cámara.
+- Ambiente y Especies: mostrar u ocultar paneles en pantallas pequeñas.
+- Intervenciones: elegir una acción, ajustar el radio con la rueda y aplicarla en el agua. Escape cancela.
+- Menú **•••**: guardar, cargar, reiniciar con las mismas especies o empezar un mundo nuevo.
 
-- `geminiApiKey`: genera nombres, descripciones, rasgos y comportamiento de especies.
-- `togetherApiKey`: genera retratos y sprites de las especies.
+Las partidas se guardan en este navegador. Cargar recupera también el individuo seleccionado. Si se agota el espacio de almacenamiento se informa el error y se conserva la partida anterior.
 
-Si solo agregas Gemini, puedes usar `IA sin imagenes`. Si agregas ambas, puedes usar `Crear mundo con IA`.
+## IA opcional
 
-## Seguridad de claves
-
-`config.local.json` esta ignorado por git y no debe subirse al repositorio. Cada jugador crea su propio archivo local con sus propias claves.
-
-El servidor bloquea el acceso web a `config.local.json`, asi que el navegador no puede descargar ese archivo directamente.
-
-## Errores comunes
-
-- Si ves que el enlace de GitHub no abre el juego, es normal: GitHub muestra el codigo. Para jugar hay que clonar el repositorio y abrir `http://127.0.0.1:5173` despues de ejecutar `python3 server.py`.
-- Si aparece `Missing Gemini API key`, falta `geminiApiKey` en `config.local.json`.
-- Si aparece `Missing Together/Flux API key`, falta `togetherApiKey` en `config.local.json`.
-- Si cambiaste las claves mientras el servidor estaba abierto, cierra el servidor y vuelve a correr `python3 server.py`.
-
-## Alternativa con Node.js
-
-Tambien puedes iniciar el servidor con Node.js:
+La IA solo se llama al crear especies o sus imágenes mediante los botones correspondientes. La simulación, las mutaciones y los reinicios no llaman APIs. La generación consume las cuotas o créditos de tu cuenta del proveedor.
 
 ```sh
-npm start
+cp config.local.example.json config.local.json
 ```
 
-o directamente:
+Editá ese archivo y reiniciá el servidor:
+
+```json
+{
+  "geminiApiKey": "tu-clave-de-gemini",
+  "togetherApiKey": "tu-clave-de-together",
+  "geminiModel": "gemini-3.1-flash-lite",
+  "togetherModel": "black-forest-labs/FLUX.2-dev"
+}
+```
+
+Con Gemini podés crear especies con dibujos locales. Con ambas claves podés pedir retratos y sprites. La interfaz indica si hay claves configuradas; la validez, los créditos y la disponibilidad del modelo se comprueban al generar.
+
+Los modelos son configurables para no depender de un nombre fijo. Los valores del ejemplo se contrastaron con la [documentación de modelos de Gemini](https://ai.google.dev/gemini-api/docs/deprecations) y el [catálogo de Together](https://docs.together.ai/docs/serverless/models). Los servidores Python y Node usan el mismo contrato del [endpoint de imágenes](https://docs.together.ai/reference/post-images-generations): PNG en base64, 512 × 512 para sprites y 768 × 576 para retratos. Así las imágenes quedan en la partida y no requieren descargar una URL temporal ni acceder a píxeles de otro dominio.
+
+Los errores temporales 429/500/502/503/504 se reintentan hasta tres veces en el servidor, con espera progresiva. Los errores de credenciales o de modelo no se reintentan. El cliente no vuelve a generar el par de imágenes automáticamente. Si falla Together al crear un mundo, se conservan las especies de Gemini y se usan dibujos locales. Si falla Gemini, podés cerrar el aviso e iniciar un mundo local.
+
+Las claves se obtienen en [Google AI Studio](https://aistudio.google.com/app/apikey) y [Together](https://api.together.ai/settings/api-keys). `config.local.json` está ignorado por Git y ambos servidores bloquean su acceso web. Las claves se envían a los proveedores mediante cabeceras del servidor. No deben colocarse en el frontend ni publicarse en GitHub Pages.
+
+## Verificación
 
 ```sh
-node server.js
+npm test
+npm run benchmark
 ```
+
+Las pruebas usan las herramientas estándar de Node y Python, sin instalar paquetes. Cubren partidas sin claves, guardado/carga, pausa, búsqueda espacial frente a búsqueda exhaustiva, límites de memoria, pestañas ocultas, igualdad entre calidades y los contratos de las APIs con respuestas simuladas. No consumen créditos ni prueban credenciales reales.
+
+El benchmark compara `origin/main` con la copia de trabajo usando la misma semilla, 12 especies, 1.200 individuos y 690 manchas de algas, en un contexto VM de Node. Mide 40 actualizaciones y descarta las primeras diez; informa mediana y percentil 95. Mide CPU de la simulación, no renderizado ni FPS del navegador. Para medir solo la versión actual: `npm run benchmark -- --optimized-only`.

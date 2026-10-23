@@ -1,11 +1,10 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote, unquote
 import json
 import mimetypes
 import urllib.request
 import urllib.error
-import base64
 import time
 
 ROOT = Path(__file__).resolve().parent
@@ -35,6 +34,8 @@ def config_status():
         "missing": missing,
         "canUseAiText": has_gemini,
         "canUseAiImages": has_gemini and has_together,
+        "geminiModel": CONFIG.get("geminiModel") or "gemini-3.1-flash-lite",
+        "togetherModel": CONFIG.get("togetherModel") or "black-forest-labs/FLUX.2-dev",
     }
 
 
@@ -58,7 +59,7 @@ def post_json(url, payload, headers=None):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=90) as response:
+        with urllib.request.urlopen(req, timeout=60) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         try:
@@ -66,8 +67,8 @@ def post_json(url, payload, headers=None):
         except Exception:
             body = {"error": {"message": str(error)}}
         return error.code, body
-    except urllib.error.URLError as error:
-        return 599, {"error": {"message": str(error)}}
+    except (urllib.error.URLError, TimeoutError):
+        return 504, {"error": {"message": "No se pudo conectar o se agotó el tiempo de espera."}}
 
 
 def build_species_prompt(body):
@@ -137,75 +138,93 @@ def extract_json(text):
     return json.loads(text[start : end + 1])
 
 
+class ApiError(RuntimeError):
+    def __init__(self, message, status=502):
+        super().__init__(message)
+        self.status = status
+
+
+def retry_request(operation, sleep=None):
+    sleep = sleep or time.sleep
+    for attempt in range(3):
+        try:
+            return operation()
+        except ApiError as error:
+            if attempt == 2 or error.status not in (429, 500, 502, 503, 504):
+                raise
+            sleep(1.5 * 2 ** attempt)
+
+
+def provider_error(provider, status, data):
+    error = data.get("error", {})
+    message = error if isinstance(error, str) else error.get("message", "La solicitud falló.")
+    raise ApiError(f"{provider} HTTP {status}: {message}", status)
+
+
 def generate_species(body):
     key = CONFIG.get("geminiApiKey")
     if not key:
-        raise RuntimeError("Missing Gemini API key.")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={key}"
-    status, data = post_json(
-        url,
-        {
-            "contents": [{"parts": [{"text": build_species_prompt(body)}]}],
-            "generationConfig": {
-                "temperature": 0.95,
-                "responseMimeType": "application/json",
-            },
-        },
-    )
-    if status >= 400:
-        message = data.get("error", {}).get("message", "Gemini request failed.")
-        raise RuntimeError(f"Gemini HTTP {status}: {message}")
-    parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        raise ApiError("Agregá geminiApiKey en config.local.json para usar IA.", 400)
+    model = CONFIG.get("geminiModel") or "gemini-3.1-flash-lite"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model, safe='')}:generateContent"
+
+    def request():
+        status, data = post_json(
+            url,
+            {"contents": [{"parts": [{"text": build_species_prompt(body)}]}],
+             "generationConfig": {"temperature": 0.95, "responseMimeType": "application/json"}},
+            {"x-goog-api-key": key},
+        )
+        if status >= 400:
+            provider_error("Gemini", status, data)
+        return data
+
+    data = retry_request(request)
+    candidates = data.get("candidates") or [{}]
+    parts = candidates[0].get("content", {}).get("parts", [])
     text = "".join(part.get("text", "") for part in parts)
-    parsed = extract_json(text)
-    return parsed.get("species", [])[:MAX_SPECIES_PER_REQUEST]
+    try:
+        parsed = extract_json(text)
+    except (ValueError, TypeError):
+        raise ApiError("Gemini no devolvió un JSON válido de especies.")
+    species = parsed.get("species", [])
+    if not isinstance(species, list):
+        raise ApiError("Gemini no devolvió especies válidas.")
+    valid = [sp for sp in species if isinstance(sp, dict) and isinstance(sp.get("name"), str)
+             and sp.get("class") in ("producer", "herbivore", "carnivore")][:MAX_SPECIES_PER_REQUEST]
+    if not valid:
+        raise ApiError("Gemini no devolvió especies válidas.")
+    return valid
 
 
 def generate_image(prompt, mode):
     key = CONFIG.get("togetherApiKey")
     if not key:
-        raise RuntimeError("Missing Together/Flux API key.")
+        raise ApiError("Agregá togetherApiKey en config.local.json para generar imágenes.", 400)
+    model = CONFIG.get("togetherModel") or "black-forest-labs/FLUX.2-dev"
+    payload = {
+        "model": model, "prompt": prompt, "n": 1,
+        "width": 512 if mode == "sprite" else 768,
+        "height": 512 if mode == "sprite" else 576,
+        "response_format": "base64", "output_format": "png",
+    }
+    if "schnell" in model:
+        payload["steps"] = 4
     status, data = post_json(
-        "https://api.together.ai/v1/images/generations",
-        {
-            "model": "black-forest-labs/FLUX.1-schnell",
-            "prompt": prompt,
-            "steps": 4,
-            "n": 1,
-            "response_format": "url",
-            "aspect_ratio": "1:1" if mode == "sprite" else "4:3",
-        },
+        "https://api.together.ai/v1/images/generations", payload,
         {"Authorization": f"Bearer {key}"},
     )
     if status >= 400:
-        message = data.get("error", {}).get("message", "Together image request failed.")
-        raise RuntimeError(f"Together/Flux HTTP {status}: {message}")
-    image_url = data.get("data", [{}])[0].get("url", "")
-    if not image_url:
-        return ""
-    image_req = urllib.request.Request(
-        image_url,
-        headers={"User-Agent": "evolucion-local/0.1"},
-    )
-    with urllib.request.urlopen(image_req, timeout=90) as response:
-        raw = response.read()
-        content_type = response.headers.get("Content-Type", "image/png").split(";")[0]
-    encoded = base64.b64encode(raw).decode("ascii")
-    return f"data:{content_type};base64,{encoded}"
+        provider_error("Together", status, data)
+    results = data.get("data") or [{}]
+    encoded = results[0].get("b64_json", "")
+    if not isinstance(encoded, str) or not encoded:
+        raise ApiError("Together no devolvió una imagen válida en base64.")
+    return f"data:image/png;base64,{encoded}"
 
 
 def generate_image_with_retry(prompt, mode):
-    last_error = None
-    for attempt in range(3):
-        try:
-            if attempt:
-                time.sleep(8 * attempt)
-            return generate_image(prompt, mode)
-        except RuntimeError as error:
-            last_error = error
-            if not any(code in str(error) for code in ("HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504")):
-                raise
-    raise last_error
+    return retry_request(lambda: generate_image(prompt, mode))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -232,27 +251,25 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/generate-images":
                 prompts = body.get("prompts", [])[:MAX_IMAGES_PER_REQUEST]
                 images = []
-                for index, item in enumerate(prompts):
-                    if index:
-                        time.sleep(2.0)
+                for item in prompts:
                     images.append(generate_image_with_retry(str(item.get("prompt", "")), item.get("mode")))
                 self._json(200, {"images": images})
                 return
             self._json(404, {"error": "Unknown API route."})
         except Exception as error:
-            self._json(500, {"error": str(error)})
+            self._json(getattr(error, "status", 500), {"error": str(error)})
 
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/config-status":
             self._json(200, config_status())
             return
-        rel = "index.html" if parsed.path == "/" else parsed.path.lstrip("/")
+        rel = "index.html" if parsed.path == "/" else unquote(parsed.path).lstrip("/")
         target = (ROOT / rel).resolve()
         if ROOT not in target.parents and target != ROOT:
             self.send_error(403)
             return
-        if target.name == "config.local.json":
+        if target.name == "config.local.json" or any(part.startswith(".") for part in Path(rel).parts):
             self.send_error(403)
             return
         if not target.exists() or not target.is_file():

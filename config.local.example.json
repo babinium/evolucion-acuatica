@@ -1,4 +1,6 @@
 {
-  "togetherApiKey": "pon-tu-clave-together-aqui",
-  "geminiApiKey": "pon-tu-clave-gemini-aqui"
+  "togetherApiKey": "",
+  "geminiApiKey": "",
+  "geminiModel": "gemini-3.1-flash-lite",
+  "togetherModel": "black-forest-labs/FLUX.2-dev"
 }

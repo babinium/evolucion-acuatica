@@ -1,5 +1,5 @@
 const canvas = document.getElementById("world");
-const ctx = canvas.getContext("2d");
+const ctx = canvas.getContext("2d", { alpha: false });
 
 const traitKeys = [
   "size", "speed", "attack", "defense", "perception", "fertility",
@@ -12,11 +12,11 @@ const INITIAL_HERBIVORES_PER_SPECIES = 24;
 const INITIAL_CARNIVORES_PER_SPECIES = Math.max(1, Math.round(INITIAL_HERBIVORES_PER_SPECIES / 3));
 
 const traitLabels = {
-  size: "Tamano",
+  size: "Tamaño",
   speed: "Velocidad",
   attack: "Ataque",
   defense: "Defensa",
-  perception: "Percepcion",
+  perception: "Percepción",
   fertility: "Fertilidad",
   metabolism: "Metabolismo",
   foodEfficiency: "Eficiencia",
@@ -24,9 +24,9 @@ const traitLabels = {
 };
 
 const envDefs = {
-  temperature: ["Temp.", 0, 100, 48, "Sube el metabolismo de animales y acelera la descomposicion de cadaveres; con alta temperatura gastan energia mas rapido."],
+  temperature: ["Temperatura", 0, 100, 48, "Sube el metabolismo de animales y acelera la descomposicion de cadaveres; con alta temperatura gastan energia mas rapido."],
   light: ["Luz", 0, 100, 68, "Aumenta la energia que ganan los productores por fotosintesis y mejora el crecimiento de alga base."],
-  oxygen: ["Oxigeno", 0, 100, 62, "Ayuda al crecimiento de alga base; si baja mucho, los individuos empiezan a perder salud."],
+  oxygen: ["Oxígeno", 0, 100, 62, "Ayuda al crecimiento de alga base; si baja mucho, los individuos empiezan a perder salud."],
   nutrients: ["Nutrientes", 0, 100, 70, "Aumenta la energia de los productores y favorece el crecimiento de alga base."],
   toxicity: ["Toxicidad", 0, 100, 12, "Daña a los individuos cuando es muy alta y reduce el crecimiento/vida del alga base."],
   currents: ["Corriente", 0, 100, 35, "Aumenta levemente la velocidad maxima de movimiento de los animales."],
@@ -62,6 +62,79 @@ const state = {
 };
 
 const spriteCache = new Map();
+const speciesById = new Map();
+const creatureGrid = new SpatialGrid();
+const resourceGrid = new SpatialGrid();
+const corpseGrid = new SpatialGrid();
+const classGrids = { producer: new SpatialGrid(), herbivore: new SpatialGrid(), carnivore: new SpatialGrid() };
+const animalGrid = new SpatialGrid();
+const proceduralSprites = new Map();
+const quadrantCounts = new Map();
+const MAX_RESOURCES = 2400;
+const MAX_CREATURES = 2400;
+const MAX_CORPSES = 1200;
+const performancePresets = {
+  eco: { label: "Bajo consumo", fps: 30, dpr: 1, scale: 0.85, grid: false },
+  balanced: { label: "Equilibrado", fps: 45, dpr: 1.25, scale: 1, grid: true },
+  quality: { label: "Más detalle", fps: 60, dpr: 1.5, scale: 1, grid: true }
+};
+let quality = "eco";
+try { quality = localStorage.getItem("evo-quality") || "eco"; } catch {}
+if (!performancePresets[quality]) quality = "eco";
+let waterGradient = null;
+let frameRequest = 0;
+let lastFrameTs = 0;
+let lastHudTs = -Infinity;
+let lastPanelTs = -Infinity;
+let simulationAccumulator = 0;
+let renderDirty = true;
+let frameCount = 0;
+let fpsStarted = 0;
+let measuredFps = 0;
+let configState = { canUseAiText: false, canUseAiImages: false, hasTogetherApiKey: false };
+let worldStarting = false;
+let creatingSpecies = false;
+
+function rebuildSpeciesIndex() {
+  speciesById.clear();
+  for (const sp of state.species) speciesById.set(sp.id, sp);
+}
+
+function quadrantKey(x, y, speciesId) {
+  const cell = state.worldSize / 4;
+  const qx = Math.floor(clamp(x, 0, state.worldSize - 1) / cell);
+  const qy = Math.floor(clamp(y, 0, state.worldSize - 1) / cell);
+  return `${speciesId}:${qx + qy * 4}`;
+}
+
+function rebuildSpatialIndexes() {
+  creatureGrid.rebuild(state.creatures);
+  resourceGrid.rebuild(state.resources);
+  corpseGrid.rebuild(state.corpses);
+  for (const grid of [...Object.values(classGrids), animalGrid]) {
+    for (const bucket of grid.cells.values()) bucket.length = 0;
+  }
+  quadrantCounts.clear();
+  for (const c of state.creatures) {
+    const type = getSpecies(c)?.class;
+    if (classGrids[type]) classGrids[type].insert(c);
+    if (type && type !== "producer") animalGrid.insert(c);
+    const key = quadrantKey(c.x, c.y, c.speciesId);
+    quadrantCounts.set(key, (quadrantCounts.get(key) || 0) + 1);
+  }
+}
+
+function invalidate() { renderDirty = true; }
+
+function setQuality(value) {
+  quality = performancePresets[value] ? value : "eco";
+  try { localStorage.setItem("evo-quality", quality); } catch {}
+  document.documentElement?.setAttribute("data-quality", quality);
+  document.getElementById("qualitySelect").value = quality;
+  document.getElementById("setupQuality").value = quality;
+  resize();
+  updateHud();
+}
 
 const toolDefs = {
   nutrientBloom: { radius: 190, tip: "Crea una floracion de nutrientes y comida natural en el area." },
@@ -105,37 +178,56 @@ function hideBusy() {
 
 async function loadConfigStatus() {
   const statusEl = document.getElementById("setupStatus");
-  const helpEl = document.getElementById("configHelp");
-  const aiButton = document.getElementById("startAI");
-  const aiTextButton = document.getElementById("startAIText");
   try {
-    const response = await fetch("/api/config-status");
+    // On static hosting the local generation server is intentionally unavailable.
+    if (location.hostname.endsWith("github.io") || location.protocol === "file:") throw new Error("static");
+    const response = await fetch("/api/config-status", { signal: AbortSignal.timeout(5000) });
     const status = await response.json();
-    if (!response.ok) throw new Error(status.error || "No se pudo leer la configuracion.");
-
-    aiButton.disabled = !status.canUseAiImages;
-    aiTextButton.disabled = !status.canUseAiText;
-
-    if (status.canUseAiImages) {
-      statusEl.textContent = "APIs listas: puedes crear mundos con IA e imagenes.";
-      helpEl.classList.add("hidden");
-      return;
-    }
-    if (status.canUseAiText) {
-      statusEl.textContent = "Gemini esta listo. Falta togetherApiKey para crear imagenes IA.";
-      return;
-    }
-    statusEl.textContent = `Faltan claves en config.local.json: ${status.missing.join(", ")}.`;
-  } catch (error) {
-    aiButton.disabled = true;
-    aiTextButton.disabled = true;
-    statusEl.textContent = "Abre el juego desde python3 server.py para usar APIs locales.";
-    logError(error.message);
+    if (!response.ok) throw new Error(status.error || "Configuración no disponible");
+    configState = status;
+    statusEl.textContent = status.canUseAiImages
+      ? "Gemini y Together configurados. Su disponibilidad se comprueba al generar."
+      : status.canUseAiText
+        ? "Gemini configurado. Podés crear especies con dibujos locales."
+        : "Listo para jugar sin claves. La IA es opcional.";
+  } catch {
+    statusEl.textContent = "Listo para jugar sin conexión. La IA necesita el servidor local.";
   }
+  document.getElementById("startAI").disabled = !configState.canUseAiImages;
+  document.getElementById("startAIText").disabled = !configState.canUseAiText;
+  document.getElementById("apiBadge").textContent = configState.canUseAiText ? "IA configurada" : "Modo local disponible";
+  updateManualSpeciesCounter();
+}
+
+async function requestApi(path, body, timeout = 200000) {
+  let response;
+  try {
+    response = await fetch(path, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(timeout)
+    });
+  } catch (error) {
+    throw new Error(error.name === "TimeoutError" || error.name === "AbortError"
+      ? "La IA tardó demasiado. Podés iniciar un mundo local."
+      : "No se pudo conectar con el servidor local.");
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || `La API respondió HTTP ${response.status}.`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+function remember(key, value) {
+  try { localStorage.setItem(key, value); return true; }
+  catch { return false; }
 }
 
 let lastTs = 0;
 let dragging = false;
+let dragDistance = 0;
 let lastMouse = { x: 0, y: 0 };
 const keys = new Set();
 
@@ -153,10 +245,16 @@ function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 function uid(prefix) { return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`; }
 
 function resize() {
-  const dpr = window.devicePixelRatio || 1;
+  const preset = performancePresets[quality];
+  const dpr = Math.min(window.devicePixelRatio || 1, preset.dpr) * preset.scale;
   canvas.width = Math.floor(innerWidth * dpr);
   canvas.height = Math.floor(innerHeight * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  waterGradient = ctx.createLinearGradient(0, 0, innerWidth, innerHeight);
+  waterGradient.addColorStop(0, "#103d48");
+  waterGradient.addColorStop(0.5, "#0b2936");
+  waterGradient.addColorStop(1, "#061923");
+  invalidate();
 }
 window.addEventListener("resize", resize);
 resize();
@@ -169,14 +267,16 @@ function screenToWorld(x, y) {
   return { x: (x - innerWidth / 2) / state.camera.zoom + state.camera.x, y: (y - innerHeight / 2) / state.camera.zoom + state.camera.y };
 }
 
-function normalizeSpecies(raw) {
+function normalizeSpecies(raw = {}) {
+  raw = raw && typeof raw === "object" ? raw : {};
   const traits = {};
-  const rawClass = raw.class || "herbivore";
+  const rawClass = ["producer", "herbivore", "carnivore"].includes(raw.class) ? raw.class : "herbivore";
   for (const key of traitKeys) {
     const max = traitMax(key, rawClass);
     const min = traitMin(key, rawClass);
     const fallback = key === "fertility" ? (rawClass === "producer" ? 18 : 10) : 5;
-    traits[key] = clamp(Number(raw.traits?.[key] ?? fallback), min, max);
+    const value = Number(raw.traits?.[key] ?? fallback);
+    traits[key] = clamp(Number.isFinite(value) ? value : fallback, min, max);
   }
   if (rawClass === "producer") {
     traits.attack = 0;
@@ -186,13 +286,13 @@ function normalizeSpecies(raw) {
   return {
     id: raw.id || uid("sp"),
     parentId: raw.parentId || null,
-    name: raw.name || "Especie sin nombre",
+    name: String(raw.name || "Especie sin nombre").slice(0, 70),
     class: rawClass,
-    description: raw.description || "Especie acuatica generada proceduralmente.",
-    visualDescription: raw.visualDescription || "Silueta acuatica simple.",
-    diet: raw.diet || "Recursos del ecosistema",
-    habitat: raw.habitat || "Aguas medias",
-    behavior: raw.behavior || "Explora, come y se reproduce.",
+    description: String(raw.description || "Especie acuática generada localmente.").slice(0, 2000),
+    visualDescription: String(raw.visualDescription || "Silueta acuática simple.").slice(0, 2000),
+    diet: String(raw.diet || "Recursos del ecosistema").slice(0, 2000),
+    habitat: String(raw.habitat || "Aguas medias").slice(0, 2000),
+    behavior: String(raw.behavior || "Explora, come y se reproduce.").slice(0, 2000),
     strengths: raw.strengths || [],
     weaknesses: raw.weaknesses || [],
     traits,
@@ -200,7 +300,7 @@ function normalizeSpecies(raw) {
     spritePrompt: raw.spritePrompt || `Simple filled top-down game sprite of ${raw.visualDescription || raw.name}, solid chroma blue background, centered, no text, filled colored body, not line art.`,
     portraitUrl: raw.portraitUrl || "",
     spriteUrl: raw.spriteUrl || "",
-    color: raw.color || colorFor(raw.class, traits),
+    color: raw.color || colorFor(rawClass, traits),
     population: 0,
     extinct: false,
     generation: raw.generation || 1
@@ -236,7 +336,7 @@ function fallbackSpecies(producers, herbivores, carnivores) {
       result.push(normalizeSpecies({
         name: `${pick(blueprints[type])} ${i + 1}`,
         class: type,
-        description: "Especie inicial generada sin IA para probar el ecosistema.",
+        description: "Especie local adaptada a las condiciones iniciales del ecosistema.",
         visualDescription: type === "producer" ? "colonia acuatica organica" : "criatura acuatica de silueta clara",
         diet: type === "producer" ? "Luz y nutrientes" : type === "herbivore" ? "Productores" : "Herbivoros y carnivoros pequenos",
         habitat: pick(["superficie", "arrecife", "aguas medias", "fondo"]),
@@ -259,13 +359,21 @@ function initEnvironment() {
 
 function seedWorld(speciesList) {
   state.species = speciesList.map((sp) => normalizeSpecies({ ...sp, extinct: false, population: 0 }));
+  rebuildSpeciesIndex();
+  spriteCache.clear();
+  proceduralSprites.clear();
   state.creatures = [];
   state.resources = [];
   state.corpses = [];
   state.zones = [];
   state.day = 0;
+  state.paused = false;
+  state.activeTool = null;
+  simulationAccumulator = 0;
   state.extinct = 0;
-  state.lastEvent = "Mundo iniciado";
+  state.lastEvent = "Tu ecosistema está vivo. Seleccioná una especie para conocerla.";
+  selectionKey = null;
+  speciesListSignature = "";
   state.selected = null;
   state.nextCreatureId = 1;
   state.nextSpeciesId = state.species.length + 1;
@@ -281,9 +389,16 @@ function seedWorld(speciesList) {
         : INITIAL_CARNIVORES_PER_SPECIES;
     for (let i = 0; i < count; i++) spawnCreature(sp, rand(120, state.worldSize - 120), rand(120, state.worldSize - 120), 0);
   }
+  rebuildSpatialIndexes();
   recalcSpecies();
   state.started = true;
   document.getElementById("setup").classList.add("hidden");
+  document.getElementById("app").classList.add("playing");
+  syncPauseButton();
+  syncEnvControls();
+  updateHud();
+  updateSpeciesList();
+  invalidate();
   updateSelection();
 }
 
@@ -302,10 +417,16 @@ function restartCurrentWorld() {
 }
 
 function spawnResource(x, y, amount) {
+  if (state.resources.length >= MAX_RESOURCES) return;
+  x = clamp(x, 0, state.worldSize);
+  y = clamp(y, 0, state.worldSize);
   state.resources.push({ id: uid("alga"), name: "Alga base", x, y, amount, max: amount, radius: Math.sqrt(amount) * 2.3 });
 }
 
 function spawnCreature(species, x, y, generation) {
+  if (state.creatures.length >= MAX_CREATURES) return;
+  x = clamp(x, 8, state.worldSize - 8);
+  y = clamp(y, 8, state.worldSize - 8);
   const t = species.traits;
   const size = Math.max(3, 4 + t.size * 2.2);
   state.creatures.push({
@@ -331,6 +452,8 @@ function spawnCreature(species, x, y, generation) {
 }
 
 async function startWorld(useAI, withImages = true) {
+  if (worldStarting) return;
+  setQuality(document.getElementById("setupQuality").value);
   const producers = clampIntegerInput("setupProducers", 1, MAX_INITIAL_SPECIES_PER_TYPE);
   const herbivores = clampIntegerInput("setupHerbivores", 1, MAX_INITIAL_SPECIES_PER_TYPE);
   const carnivores = clampIntegerInput("setupCarnivores", 0, MAX_INITIAL_SPECIES_PER_TYPE);
@@ -346,93 +469,77 @@ async function startWorld(useAI, withImages = true) {
     return;
   }
 
+  worldStarting = true;
   try {
     showBusy("Creando mundo", "Generando especies con Gemini...");
     setupStatus.textContent = "Generando especies con Gemini...";
     state.aiCalls++;
-    const response = await fetch("/api/generate-species", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ producers, herbivores, carnivores, world: { chaos: state.chaos, mutationRate: state.mutationRate } })
+    const data = await requestApi("/api/generate-species", {
+      producers, herbivores, carnivores, world: { chaos: state.chaos, mutationRate: state.mutationRate }
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "No se pudieron generar especies.");
-    const species = data.species.map(normalizeSpecies);
+    if (!Array.isArray(data.species) || !data.species.length) throw new Error("La IA no devolvió especies válidas.");
+    const species = data.species.slice(0, 12).map(normalizeSpecies);
+    let missingImages = 0;
 
     if (withImages) {
       for (let i = 0; i < species.length; i++) {
         const message = `Generando imagenes IA ${i + 1}/${species.length}...`;
         setupStatus.textContent = message;
         updateBusy(message);
-        await addImagesToSpeciesWithRetry(species[i], setupStatus);
+        try { await addImagesToSpeciesWithRetry(species[i], setupStatus); }
+        catch (error) {
+          missingImages++;
+          logError(`Imágenes de ${species[i].name}: ${error.message}. Se usará un dibujo local.`);
+          // Permanent errors affect every following species; avoid more paid requests.
+          if (![429, 500, 502, 503, 504].includes(error.status)) { missingImages += species.length - i - 1; break; }
+        }
       }
     }
-    localStorage.setItem("evo-last-ai-species", JSON.stringify(species));
     hideBusy();
     seedWorld(species);
+    if (missingImages) state.lastEvent = "Mundo listo. Algunas especies usan dibujos locales porque falló la IA de imágenes.";
   } catch (error) {
     const message = `Fallo IA: ${error.message}. Vuelve a intentar crear el mundo.`;
     setupStatus.textContent = message;
     showBusyError("No se pudo crear el mundo", message);
     logError(message);
-  }
+  } finally { worldStarting = false; }
 }
 
 async function addImagesToSpecies(species) {
   state.aiCalls++;
-  const response = await fetch("/api/generate-images", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      prompts: [
-        { mode: "portrait", prompt: `${species.portraitPrompt}. Clean white background, isolated subject, no text, no watermark.` },
-        { mode: "sprite", prompt: `${species.spritePrompt}. Simple filled 2D game sprite, top-down readable silhouette, solid colored body with visible interior color, not outline-only, not line art, no hollow center, head/front facing exactly to the right, tail/back to the left, side profile oriented horizontally, solid chroma blue background (#0047ff), avoid blue creature colors, no text, no shadow.` }
-      ]
-    })
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "No se pudieron generar imagenes.");
+  const data = await requestApi("/api/generate-images", {
+    prompts: [
+      { mode: "portrait", prompt: `${species.portraitPrompt}. Clean white background, isolated subject, no text, no watermark.` },
+      { mode: "sprite", prompt: `${species.spritePrompt}. Filled 2D game sprite, head facing right, tail left, solid chroma blue background (#0047ff), avoid blue creature colors, no text.` }
+    ]
+  }, 400000);
   species.portraitUrl = data.images?.[0] || "";
   species.spriteUrl = data.images?.[1] || "";
   if (!species.portraitUrl || !species.spriteUrl) throw new Error("La API no devolvio ambas imagenes.");
 }
 
 async function addImagesToSpeciesWithRetry(species, statusEl) {
-  let lastError = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      if (attempt > 1) {
-        const retryMessage = `Reintentando imagenes de ${species.name} (${attempt}/3)...`;
-        statusEl.textContent = retryMessage;
-        updateBusy(retryMessage);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      }
-      await addImagesToSpecies(species);
-      return;
-    } catch (error) {
-      lastError = error;
-      const message = `Intento ${attempt}/3 fallo para ${species.name}: ${error.message}`;
-      statusEl.textContent = message;
-      updateBusy(message);
-      logError(message);
-    }
-  }
-  throw new Error(`No se pudieron crear las imagenes de ${species.name} despues de 3 intentos. ${lastError?.message || ""}`);
+  statusEl.textContent = `Creando imágenes de ${species.name}…`;
+  // The server owns retries so a failed portrait never regenerates the paid pair.
+  await addImagesToSpecies(species);
 }
 
 function getSpecies(creature) {
-  return state.species.find((s) => s.id === creature.speciesId);
+  return speciesById.get(creature.speciesId);
 }
 
 function update(dt) {
-  if (!state.started || state.paused) return;
+  if (!state.started) return;
+  updateCamera(dt);
+  if (state.paused) return;
   const simDt = dt * state.speed;
   state.day += simDt * 0.018;
-  updateCamera(simDt);
   updateEnvironment(simDt);
   updateResources(simDt);
   updateCorpses(simDt);
   updateZones(simDt);
+  rebuildSpatialIndexes();
   updateCreatures(simDt);
   recalcSpecies();
 }
@@ -445,6 +552,7 @@ function updateCamera(dt) {
   if (keys.has("d") || keys.has("arrowright")) state.camera.x += pan;
   state.camera.x = clamp(state.camera.x, 0, state.worldSize);
   state.camera.y = clamp(state.camera.y, 0, state.worldSize);
+  if (keys.size) invalidate();
 }
 
 function updateEnvironment(dt) {
@@ -500,9 +608,12 @@ function updateCreatures(dt) {
   const newborns = [];
   const deaths = [];
   const livingClassCounts = countLivingClasses();
+  const maxCorpseRadius = state.corpses.reduce((max, corpse) => Math.max(max, corpse.radius), 0);
+  corpseGrid.maxRadius = maxCorpseRadius;
   for (const c of state.creatures) {
     const sp = getSpecies(c);
     if (!sp) continue;
+    const oldX = c.x, oldY = c.y, oldSpeciesId = c.speciesId;
     const t = sp.traits;
     c.age += dt * 0.55;
     c.cooldown = Math.max(0, c.cooldown - dt * 20);
@@ -520,7 +631,8 @@ function updateCreatures(dt) {
     c.y = clamp(c.y + c.vy * dt * 58, 8, state.worldSize - 8);
 
     const energyRatio = clamp(c.energy / 120, 0, 1);
-    const canReproduce = c.energy > 35
+    const canReproduce = state.creatures.length + newborns.length < MAX_CREATURES
+      && c.health > 0 && c.energy > 35
       && c.cooldown <= 0
       && !isCrowdedForReproduction(c, sp);
     const populationBalance = reproductionPopulationBalance(sp, livingClassCounts);
@@ -535,6 +647,15 @@ function updateCreatures(dt) {
     if (state.env.oxygen < 18) c.health -= dt * (18 - state.env.oxygen) * 0.18;
     if (state.env.toxicity > 62) c.health -= dt * (state.env.toxicity - 62) * 0.08;
     if (c.age > 260 + t.size * 18) c.health -= dt * 3;
+    creatureGrid.move(c, oldX, oldY);
+    classGrids[sp.class]?.move(c, oldX, oldY);
+    if (sp.class !== "producer") animalGrid.move(c, oldX, oldY);
+    const oldKey = quadrantKey(oldX, oldY, oldSpeciesId);
+    const newKey = quadrantKey(c.x, c.y, c.speciesId);
+    if (oldKey !== newKey) {
+      quadrantCounts.set(oldKey, (quadrantCounts.get(oldKey) || 1) - 1);
+      quadrantCounts.set(newKey, (quadrantCounts.get(newKey) || 0) + 1);
+    }
   }
 
   for (const item of newborns) {
@@ -548,7 +669,7 @@ function updateCreatures(dt) {
   });
   for (const dead of deaths) {
     const sp = getSpecies(dead);
-    if (sp && sp.class !== "producer") {
+    if (sp && sp.class !== "producer" && state.corpses.length < MAX_CORPSES) {
       state.corpses.push({
         id: uid("corpse"),
         x: dead.x,
@@ -577,7 +698,7 @@ function isCrowdedForReproduction(creature, species) {
       ? 14
       : 9;
   let nearby = 0;
-  for (const other of state.creatures) {
+  for (const other of creatureGrid.query(creature.x, creature.y, radius)) {
     if (other.id === creature.id || other.speciesId !== creature.speciesId) continue;
     if (Math.hypot(creature.x - other.x, creature.y - other.y) < radius) {
       nearby++;
@@ -588,18 +709,7 @@ function isCrowdedForReproduction(creature, species) {
 }
 
 function sameSpeciesInQuadrant(creature) {
-  const quadrantsPerSide = 4;
-  const cellSize = state.worldSize / quadrantsPerSide;
-  const qx = Math.floor(clamp(creature.x, 0, state.worldSize - 1) / cellSize);
-  const qy = Math.floor(clamp(creature.y, 0, state.worldSize - 1) / cellSize);
-  let count = 0;
-  for (const other of state.creatures) {
-    if (other.speciesId !== creature.speciesId) continue;
-    const ox = Math.floor(clamp(other.x, 0, state.worldSize - 1) / cellSize);
-    const oy = Math.floor(clamp(other.y, 0, state.worldSize - 1) / cellSize);
-    if (ox === qx && oy === qy) count++;
-  }
-  return count;
+  return quadrantCounts.get(quadrantKey(creature.x, creature.y, creature.speciesId)) || 0;
 }
 
 function countLivingClasses() {
@@ -639,7 +749,7 @@ function animalThink(c, sp, dt, livingClassCounts) {
   let nearestThreat = null;
   let threatD = 99999;
   if (sp.class === "herbivore") {
-    for (const other of state.creatures) {
+    for (const other of classGrids.carnivore.query(c.x, c.y, 130 + t.perception * 18)) {
       const osp = getSpecies(other);
       if (!osp || osp.class !== "carnivore") continue;
       const d = dist(c, other);
@@ -672,12 +782,12 @@ function eatProducer(c, sp, dt, classCounts) {
   let best = null;
   let bestD = 99999;
   let bestType = null;
-  const hungry = c.energy < 82;
   const searchRadius = foodVisionRadius(c, sp, 520, 135);
   const preferAlgae = classCounts.herbivore > classCounts.producer;
   const producerBias = preferAlgae ? 220 : -120;
   const algaeBias = preferAlgae ? -150 : 160;
-  for (const other of state.creatures) {
+  for (const other of classGrids.producer.query(c.x, c.y, searchRadius)) {
+    if (other.health <= 0 || other.energy <= -35) continue;
     const otherSp = getSpecies(other);
     if (!otherSp || otherSp.class !== "producer") continue;
     const d = Math.hypot(c.x - other.x, c.y - other.y);
@@ -689,7 +799,8 @@ function eatProducer(c, sp, dt, classCounts) {
       bestType = "producer";
     }
   }
-  for (const alga of state.resources) {
+  for (const alga of resourceGrid.query(c.x, c.y, searchRadius)) {
+    if (alga.amount <= 0) continue;
     const d = Math.hypot(c.x - alga.x, c.y - alga.y);
     const score = d - alga.amount * 0.18 + algaeBias;
     if (d < searchRadius && score < bestD) {
@@ -765,7 +876,8 @@ function hunt(c, sp, dt) {
   let bestScore = -99999;
   let bestBackupScore = -99999;
   const huntRadius = foodVisionRadius(c, sp, 360 + hunger * 340, 58 + hunger * 28);
-  for (const other of state.creatures) {
+  for (const other of animalGrid.query(c.x, c.y, huntRadius)) {
+    if (other.health <= 0 || other.energy <= -35) continue;
     if (other.id === c.id) continue;
     const osp = getSpecies(other);
     if (!osp || osp.class === "producer") continue;
@@ -824,7 +936,8 @@ function hunt(c, sp, dt) {
 function eatNearbyCorpse(c, sp, dt) {
   let best = null;
   let bestD = 99999;
-  for (const corpse of state.corpses) {
+  for (const corpse of corpseGrid.query(c.x, c.y, c.size + (corpseGrid.maxRadius || 180) + 18)) {
+    if (corpse.amount <= 0) continue;
     const d = Math.hypot(c.x - corpse.x, c.y - corpse.y);
     if (d < bestD && d < c.size + corpse.radius + 18) {
       best = corpse;
@@ -840,7 +953,8 @@ function eatCorpse(c, sp, dt, hunger = 0) {
   let best = null;
   let bestScore = 99999;
   const corpseRadius = foodVisionRadius(c, sp, 520 + hunger * 520, 72 + hunger * 38);
-  for (const corpse of state.corpses) {
+  for (const corpse of corpseGrid.query(c.x, c.y, corpseRadius)) {
+    if (corpse.amount <= 0) continue;
     const d = Math.hypot(c.x - corpse.x, c.y - corpse.y);
     const score = d - corpse.amount * (0.45 + hunger * 0.35);
     if (score < bestScore && d < corpseRadius) {
@@ -896,7 +1010,7 @@ function nearestFoodScent(c, sp) {
   let best = null;
   let bestScore = 99999;
   const scentRadius = 900 + sp.traits.perception * 95;
-  for (const corpse of state.corpses) {
+  for (const corpse of corpseGrid.query(c.x, c.y, scentRadius)) {
     const d = Math.hypot(c.x - corpse.x, c.y - corpse.y);
     const score = d - corpse.amount * 0.7;
     if (d < scentRadius && score < bestScore) {
@@ -904,7 +1018,7 @@ function nearestFoodScent(c, sp) {
       bestScore = score;
     }
   }
-  for (const other of state.creatures) {
+  for (const other of animalGrid.query(c.x, c.y, scentRadius)) {
     if (other.id === c.id || other.speciesId === c.speciesId) continue;
     const osp = getSpecies(other);
     if (!osp || osp.class === "producer") continue;
@@ -974,6 +1088,7 @@ function maybeMutateSpecies(sp, parent) {
     color: colorFor(sp.class, traits)
   });
   state.species.push(child);
+  speciesById.set(child.id, child);
   state.lastEvent = `Nueva especie: ${child.name}`;
   parent.speciesId = child.id;
   state.selected = parent;
@@ -996,7 +1111,6 @@ function recalcSpecies() {
 }
 
 function render() {
-  ctx.clearRect(0, 0, innerWidth, innerHeight);
   drawWater();
   if (state.started) {
     drawResources();
@@ -1006,33 +1120,31 @@ function render() {
     drawToolPreview();
     drawWorldBounds();
   }
-  updateHud();
-  requestAnimationFrame(loop);
+  renderDirty = false;
 }
 
 function drawWater() {
-  const g = ctx.createLinearGradient(0, 0, innerWidth, innerHeight);
-  g.addColorStop(0, "#082027");
-  g.addColorStop(0.45, "#0a3438");
-  g.addColorStop(1, "#031115");
-  ctx.fillStyle = g;
+  ctx.fillStyle = waterGradient;
   ctx.fillRect(0, 0, innerWidth, innerHeight);
-  if (!state.started) return;
+  if (!state.started || !performancePresets[quality].grid) return;
   ctx.save();
   ctx.globalAlpha = 0.18;
   ctx.strokeStyle = "#9edbd3";
   ctx.lineWidth = 1;
-  const step = 180 * state.camera.zoom;
+  const step = Math.max(54, 240 * state.camera.zoom);
   const ox = ((-state.camera.x * state.camera.zoom + innerWidth / 2) % step + step) % step;
   const oy = ((-state.camera.y * state.camera.zoom + innerHeight / 2) % step + step) % step;
-  for (let x = ox; x < innerWidth; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, innerHeight); ctx.stroke(); }
-  for (let y = oy; y < innerHeight; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(innerWidth, y); ctx.stroke(); }
+  ctx.beginPath();
+  for (let x = ox; x < innerWidth; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, innerHeight); }
+  for (let y = oy; y < innerHeight; y += step) { ctx.moveTo(0, y); ctx.lineTo(innerWidth, y); }
+  ctx.stroke();
   ctx.restore();
 }
 
 function inView(x, y, pad = 80) {
-  const s = worldToScreen(x, y);
-  return s.x > -pad && s.x < innerWidth + pad && s.y > -pad && s.y < innerHeight + pad;
+  const sx = (x - state.camera.x) * state.camera.zoom + innerWidth / 2;
+  const sy = (y - state.camera.y) * state.camera.zoom + innerHeight / 2;
+  return sx > -pad && sx < innerWidth + pad && sy > -pad && sy < innerHeight + pad;
 }
 
 function drawResources() {
@@ -1106,38 +1218,16 @@ function drawCreatures() {
     if (sprite?.ready) {
       const drawSize = r * (sp.class === "producer" ? 3.1 : 4.2);
       ctx.drawImage(sprite.canvas, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
-    } else if (sp.class === "producer") {
-      ctx.fillStyle = sp.color;
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(230,255,230,0.45)";
-      ctx.stroke();
-    } else if (sp.class === "herbivore") {
-      ctx.fillStyle = sp.color;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, r * 1.35, r * 0.72, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.55)";
-      ctx.beginPath();
-      ctx.moveTo(-r * 1.25, 0);
-      ctx.lineTo(-r * 1.85, -r * 0.5);
-      ctx.lineTo(-r * 1.85, r * 0.5);
-      ctx.closePath();
-      ctx.fill();
     } else {
-      ctx.fillStyle = sp.color;
-      ctx.beginPath();
-      ctx.moveTo(r * 1.7, 0);
-      ctx.lineTo(-r, -r * 0.85);
-      ctx.lineTo(-r * 0.55, 0);
-      ctx.lineTo(-r, r * 0.85);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.beginPath();
-      ctx.arc(r * 0.7, -r * 0.2, Math.max(1, r * 0.13), 0, Math.PI * 2);
-      ctx.fill();
+      const shape = getProceduralSprite(sp);
+      const w = r * (sp.class === "producer" ? 3.2 : 4.8);
+      const h = r * (sp.class === "producer" ? 3.2 : 2.8);
+      ctx.drawImage(shape, -w / 2, -h / 2, w, h);
+    }
+    if (c.protected > 0) {
+      ctx.strokeStyle = "#95cde2";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(0, 0, r * 2.1, 0, Math.PI * 2); ctx.stroke();
     }
     if (state.selected?.id === c.id) {
       ctx.strokeStyle = "#f4c45c";
@@ -1150,17 +1240,63 @@ function drawCreatures() {
   }
 }
 
+function getProceduralSprite(sp) {
+  const cached = proceduralSprites.get(sp.id);
+  if (cached) return cached;
+  const sprite = document.createElement("canvas");
+  sprite.width = 96; sprite.height = 96;
+  const c = sprite.getContext("2d");
+  c.translate(48, 48);
+  c.fillStyle = sp.color;
+  if (sp.class === "producer") {
+    for (let i = 0; i < 6; i++) {
+      c.save(); c.rotate(i * Math.PI / 3);
+      c.globalAlpha = 0.65;
+      c.beginPath(); c.ellipse(0, -17, 9, 21, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "#c5eed199"; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(0, -3); c.lineTo(0, -31); c.stroke(); c.restore();
+    }
+    c.fillStyle = "#d1df9e";
+    c.beginPath(); c.arc(0, 0, 7, 0, Math.PI * 2); c.fill();
+  } else {
+    // Fins and tail are drawn once per species, then reused for every animal.
+    c.globalAlpha = 0.72;
+    c.beginPath(); c.moveTo(-21, 0); c.lineTo(-43, -21); c.quadraticCurveTo(-36, 0, -43, 21); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(-8, -10); c.lineTo(6, -31); c.lineTo(17, -11); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(-7, 11); c.lineTo(8, 27); c.lineTo(16, 10); c.closePath(); c.fill();
+    c.globalAlpha = 1;
+    c.beginPath();
+    c.moveTo(36, 0); c.bezierCurveTo(17, -28, -14, -22, -28, 0);
+    c.bezierCurveTo(-12, 21, 17, 24, 36, 0); c.fill();
+    c.strokeStyle = "#e5f5e470"; c.lineWidth = 1.5;
+    c.beginPath(); c.moveTo(-20, -1); c.quadraticCurveTo(7, -16, 29, -2); c.stroke();
+    c.strokeStyle = "#112c3b77";
+    c.beginPath(); c.moveTo(18, -12); c.quadraticCurveTo(9, 0, 18, 12); c.stroke();
+    c.fillStyle = "#eaf0dc"; c.beginPath(); c.arc(24, -4, 4.3, 0, Math.PI * 2); c.fill();
+    c.fillStyle = "#132735"; c.beginPath(); c.arc(25, -4, 2.3, 0, Math.PI * 2); c.fill();
+    if (sp.class === "carnivore") {
+      c.fillStyle = "#fff1cd"; c.beginPath(); c.moveTo(34, 1); c.lineTo(26, 4); c.lineTo(27, 0); c.fill();
+    }
+  }
+  proceduralSprites.set(sp.id, sprite);
+  return sprite;
+}
+
 function getSprite(species) {
   if (!species.spriteUrl) return null;
   if (spriteCache.has(species.id)) return spriteCache.get(species.id);
-  const entry = { ready: false, canvas: document.createElement("canvas") };
+  const entry = { ready: false, canvas: null };
   spriteCache.set(species.id, entry);
   const img = new Image();
   img.onload = () => {
-    entry.canvas = removeSpriteBackground(img);
-    entry.ready = true;
+    try {
+      entry.canvas = removeSpriteBackground(img);
+      entry.ready = true;
+    } catch { entry.ready = false; }
+    invalidate();
   };
-  img.onerror = () => spriteCache.delete(species.id);
+  img.crossOrigin = "anonymous";
+  img.onerror = () => { entry.ready = false; };
   img.src = species.spriteUrl;
   return entry;
 }
@@ -1246,52 +1382,134 @@ function drawWorldBounds() {
   ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
 }
 
+const hudElements = new Map();
+function setText(id, value) {
+  let el = hudElements.get(id);
+  if (!el) { el = document.getElementById(id); hudElements.set(id, el); }
+  const text = String(value);
+  if (el.textContent !== text) el.textContent = text;
+}
+
 function updateHud() {
-  document.getElementById("dayStat").textContent = Math.floor(state.day);
-  document.getElementById("popStat").textContent = state.creatures.length;
-  document.getElementById("speciesStat").textContent = state.species.filter((s) => !s.extinct).length;
-  document.getElementById("extinctStat").textContent = state.extinct;
-  document.getElementById("eventStat").textContent = state.lastEvent;
-  document.getElementById("speedLabel").textContent = `${state.speed.toFixed(1)}x`;
+  setText("dayStat", Math.floor(state.day));
+  setText("popStat", state.creatures.length);
+  setText("speciesStat", state.species.filter(s => !s.extinct).length);
+  setText("extinctStat", state.extinct);
+  setText("eventStat", state.lastEvent);
+  setText("speedLabel", `${state.speed.toFixed(1)}x`);
+  setText("zoomLabel", `${Math.round(state.camera.zoom * 100)}%`);
+  setText("mapSizeLabel", `${state.worldSize.toLocaleString("es-AR")} × ${state.worldSize.toLocaleString("es-AR")}`);
+  setText("performanceStat", `${performancePresets[quality].label} · ${state.paused ? "En pausa" : `${measuredFps || performancePresets[quality].fps} FPS`} · ${performancePresets[quality].fps} máx.`);
 }
 
 function loop(ts) {
-  const dt = Math.min(0.08, (ts - lastTs) / 1000 || 0);
+  frameRequest = 0;
+  if (document.hidden) return;
+  const interval = 1000 / performancePresets[quality].fps;
+  if (lastFrameTs && ts - lastFrameTs < interval - 0.5) {
+    frameRequest = requestAnimationFrame(loop);
+    return;
+  }
+  const dt = lastTs ? Math.min(0.2, (ts - lastTs) / 1000) : 0;
   lastTs = ts;
-  update(dt);
-  render();
+  lastFrameTs = ts;
+  const running = state.started && !state.paused && !worldStarting && !creatingSpecies;
+  if (running) {
+    simulationAccumulator += dt;
+    // Fixed 30 Hz simulation keeps the ecology independent of visual quality.
+    // Bound catch-up work so a slow machine can still respond to input.
+    let steps = 0;
+    while (simulationAccumulator >= 1 / 30 && steps < 3) {
+      update(1 / 30);
+      simulationAccumulator -= 1 / 30;
+      steps++;
+    }
+    if (steps === 3) simulationAccumulator = 0;
+  } else {
+    simulationAccumulator = 0;
+    if (state.started && keys.size) { updateCamera(dt); invalidate(); }
+  }
+  if (running || renderDirty) {
+    render();
+    frameCount++;
+  }
+  if (ts - fpsStarted >= 1000) {
+    measuredFps = Math.round(frameCount * 1000 / Math.max(1, ts - fpsStarted));
+    frameCount = 0;
+    fpsStarted = ts;
+  }
+  if (ts - lastHudTs >= 250) { updateHud(); lastHudTs = ts; }
+  if (ts - lastPanelTs >= 700) {
+    if (state.started) { syncEnvControls(); updateSelection(); updateSpeciesList(); }
+    lastPanelTs = ts;
+  }
+  frameRequest = requestAnimationFrame(loop);
 }
 
+// Never simulate elapsed time from an inactive tab.
+document.addEventListener("visibilitychange", () => {
+  keys.clear();
+  if (document.hidden) { cancelAnimationFrame(frameRequest); frameRequest = 0; }
+  else {
+    lastTs = 0; lastFrameTs = 0; simulationAccumulator = 0; invalidate();
+    if (!frameRequest) frameRequest = requestAnimationFrame(loop);
+  }
+});
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function safeImageUrl(value) {
+  return /^(https?:\/\/|data:image\/(png|jpeg|webp);base64,)/i.test(value || "") ? escapeHtml(value) : "";
+}
+
+let selectionKey = null;
 function updateSelection() {
   const panel = document.getElementById("selectionPanel");
   const empty = document.getElementById("selectionEmpty");
   const c = state.selected;
   if (!c || !state.creatures.includes(c)) {
+    state.selected = null;
+    selectionKey = null;
     panel.classList.add("hidden");
     empty.classList.remove("hidden");
     return;
   }
   const sp = getSpecies(c);
+  if (!sp) return;
   empty.classList.add("hidden");
   panel.classList.remove("hidden");
-  const image = sp.portraitUrl ? `<img class="portrait" src="${sp.portraitUrl}" alt="${sp.name}">` : `<div class="portrait"></div>`;
-  panel.innerHTML = `
-    ${image}
-    <span class="species-chip">${className(sp.class)}</span>
-    <h2>${sp.name}</h2>
-    <p class="hint">${sp.description}</p>
-    <div class="detail-grid">
-      ${detail("Estado", c.state)}
-      ${detail("Generacion", c.generation)}
-      ${detail("Edad", Math.floor(c.age))}
-      ${detail("Energia", Math.floor(c.energy))}
-      ${detail("Salud", `${Math.floor(c.health)}/${Math.floor(c.maxHealth)}`)}
-      ${detail("Poblacion", sp.population)}
-    </div>
-    <p class="hint"><b>Dieta:</b> ${sp.diet}</p>
-    <p class="hint"><b>Habitat:</b> ${sp.habitat}</p>
-    <div class="trait-list">${traitKeys.map((k) => traitBar(k, sp.traits[k])).join("")}</div>
-  `;
+  const key = `${c.id}:${sp.id}`;
+  if (selectionKey !== key) {
+    const imageUrl = safeImageUrl(sp.portraitUrl);
+    const image = imageUrl ? `<img class="portrait" src="${imageUrl}" alt="Retrato de ${escapeHtml(sp.name)}" loading="lazy">` : "";
+    panel.innerHTML = `
+      ${image}
+      <div class="selection-heading"><span class="selection-avatar" style="color:${escapeHtml(sp.color)}"><svg><use href="#${sp.class === "producer" ? "i-leaf" : "i-fish"}"/></svg></span><div><span class="species-chip">${className(sp.class)} · Individuo #${c.id}</span><h2>${escapeHtml(sp.name)}</h2></div></div>
+      <p class="hint">${escapeHtml(sp.description)}</p>
+      <div class="detail-grid">${["Estado", "Generación", "Edad", "Energía", "Salud", "Población"].map((label, i) => `<div class="detail"><span>${label}</span><b data-selection="${i}"></b></div>`).join("")}</div>
+      <p class="hint"><b>Dieta:</b> ${escapeHtml(sp.diet)}</p>
+      <p class="hint"><b>Hábitat:</b> ${escapeHtml(sp.habitat)}</p>
+      <div class="trait-list">${traitKeys.map(k => traitBar(k, sp.traits[k])).join("")}</div>`;
+    selectionKey = key;
+  }
+  const values = [c.state, c.generation, Math.floor(c.age), Math.floor(c.energy), `${Math.floor(c.health)} / ${Math.floor(c.maxHealth)}`, sp.population];
+  panel.querySelectorAll("[data-selection]").forEach((el, i) => {
+    const value = String(values[i]);
+    if (el.textContent !== value) el.textContent = value;
+  });
+}
+
+let speciesListSignature = "";
+function updateSpeciesList() {
+  const signature = state.species.map(sp => `${sp.id}:${sp.population}:${sp.extinct}`).join("|") + `:${state.selected?.speciesId || ""}`;
+  if (signature === speciesListSignature) return;
+  speciesListSignature = signature;
+  setText("speciesCount", state.species.filter(sp => !sp.extinct).length);
+  const counts = countLivingClasses();
+  document.getElementById("trophicSummary").innerHTML = [["producer", "Productores"], ["herbivore", "Herbívoros"], ["carnivore", "Carnívoros"]].map(([type, label]) => `<span class="${type}"><b>${counts[type]}</b>${label}</span>`).join("");
+  document.getElementById("speciesList").innerHTML = state.species.map((sp, i) => `<button class="species-row ${sp.extinct ? "extinct" : ""} ${state.selected?.speciesId === sp.id ? "active" : ""}" data-species-index="${i}" ${sp.population ? "" : "disabled"} title="Ver ${escapeHtml(sp.name)}"><span class="species-symbol" style="color:${escapeHtml(sp.color)}"><svg><use href="#${sp.class === "producer" ? "i-leaf" : "i-fish"}"/></svg></span><span><strong>${escapeHtml(sp.name)}</strong><small>${sp.extinct ? "Extinta" : className(sp.class)}</small></span><b>${sp.population}</b></button>`).join("");
 }
 
 function detail(label, value) {
@@ -1304,6 +1522,7 @@ function traitBar(key, value) {
 }
 
 function traitMax(key, speciesClass = "herbivore") {
+  if (key === "speed" && speciesClass === "producer") return 2;
   if (key !== "fertility") return 10;
   return speciesClass === "producer" ? 30 : 20;
 }
@@ -1315,7 +1534,7 @@ function traitMin(key, speciesClass = "herbivore") {
 }
 
 function className(type) {
-  return type === "producer" ? "Productor" : type === "herbivore" ? "Herbivoro" : "Carnivoro";
+  return type === "producer" ? "Productor" : type === "herbivore" ? "Herbívoro" : "Carnívoro";
 }
 
 function buildEnvControls() {
@@ -1325,7 +1544,7 @@ function buildEnvControls() {
     const row = document.createElement("div");
     row.className = "env-row";
     row.title = def[4];
-    row.innerHTML = `<span title="${def[4]}">${def[0]}</span><input title="${def[4]}" type="range" min="${def[1]}" max="${def[2]}" value="${def[3]}" data-env="${key}"><output>${def[3]}</output>`;
+    row.innerHTML = `<label for="env-${key}" title="${def[4]}">${def[0]}</label><input id="env-${key}" aria-label="${def[0]}" title="${def[4]}" type="range" min="${def[1]}" max="${def[2]}" value="${def[3]}" data-env="${key}"><output>${def[3]}</output>`;
     box.appendChild(row);
   }
   box.addEventListener("input", (event) => {
@@ -1346,20 +1565,22 @@ function syncEnvControls() {
     input.nextElementSibling.textContent = Math.round(state.env[key] ?? input.value);
   }
 }
-setInterval(syncEnvControls, 700);
-setInterval(updateSelection, 1000);
 
-canvas.addEventListener("mousedown", (event) => {
+canvas.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
   dragging = true;
+  dragDistance = 0;
   lastMouse = { x: event.clientX, y: event.clientY };
 });
 
-window.addEventListener("mouseup", () => { dragging = false; });
-window.addEventListener("mousemove", (event) => {
+window.addEventListener("pointerup", () => { dragging = false; });
+window.addEventListener("pointercancel", () => { dragging = false; });
+window.addEventListener("pointermove", (event) => {
   updateMouseWorld(event);
   if (!dragging) return;
   const dx = event.clientX - lastMouse.x;
   const dy = event.clientY - lastMouse.y;
+  dragDistance += Math.abs(dx) + Math.abs(dy);
   state.camera.x -= dx / state.camera.zoom;
   state.camera.y -= dy / state.camera.zoom;
   lastMouse = { x: event.clientX, y: event.clientY };
@@ -1371,9 +1592,11 @@ function updateMouseWorld(event) {
   const p = screenToWorld(event.clientX, event.clientY);
   state.mouse.worldX = p.x;
   state.mouse.worldY = p.y;
+  if (dragging || state.activeTool) invalidate();
 }
 
 canvas.addEventListener("click", (event) => {
+  if (dragDistance > 5) return;
   if (!state.started) return;
   const p = screenToWorld(event.clientX, event.clientY);
   if (state.activeTool) {
@@ -1388,7 +1611,8 @@ canvas.addEventListener("click", (event) => {
   }
   if (best) {
     state.selected = best;
-    updateSelection();
+    selectionKey = null;
+    updateSelection(); updateSpeciesList(); invalidate();
   }
 });
 
@@ -1406,9 +1630,26 @@ canvas.addEventListener("wheel", (event) => {
   const after = screenToWorld(event.clientX, event.clientY);
   state.camera.x += before.x - after.x;
   state.camera.y += before.y - after.y;
+  invalidate();
 }, { passive: false });
 
-window.addEventListener("keydown", (event) => keys.add(event.key.toLowerCase()));
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    state.activeTool = null;
+    const modal = document.getElementById("modal");
+    if (!modal.classList.contains("hidden")) {
+      modal.classList.add("hidden"); document.getElementById("newSpeciesBtn").focus();
+    }
+    document.getElementById("worldMenu").open = false;
+    document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", "false"));
+    invalidate(); return;
+  }
+  if (event.target?.closest("input, textarea, select") || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.key === " " && state.started && !event.target?.closest("button, summary")) { event.preventDefault(); if (!event.repeat) togglePause(); return; }
+  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) event.preventDefault();
+  keys.add(event.key.toLowerCase());
+});
+window.addEventListener("blur", () => { keys.clear(); dragging = false; });
 window.addEventListener("keyup", (event) => keys.delete(event.key.toLowerCase()));
 
 function applyTool(x, y) {
@@ -1435,6 +1676,10 @@ function applyTool(x, y) {
   }
   if (tool === "favor") {
     const c = state.selected;
+    if (!c || !state.creatures.includes(c)) {
+      state.lastEvent = "Elegí primero una especie o un individuo para favorecerlo.";
+      updateHud(); return;
+    }
     if (c) {
       const sp = getSpecies(c);
       const count = Math.max(3, Math.round(radius / 22));
@@ -1447,35 +1692,88 @@ function applyTool(x, y) {
     }
   }
   state.activeTool = null;
-  document.getElementById("toolHint").textContent = "Herramienta aplicada.";
+  document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", "false"));
+  invalidate();
+  rebuildSpatialIndexes(); recalcSpecies(); updateSpeciesList(); updateSelection(); updateHud();
+  document.getElementById("toolHint").textContent = "Intervención aplicada. Elegí otra para continuar.";
 }
 
+document.getElementById("startLocal").addEventListener("click", () => startWorld(false));
 document.getElementById("startAI").addEventListener("click", () => startWorld(true, true));
 document.getElementById("startAIText").addEventListener("click", () => startWorld(true, false));
-document.getElementById("pauseBtn").addEventListener("click", () => {
-  state.paused = !state.paused;
-  document.getElementById("pauseBtn").textContent = state.paused ? "Seguir" : "Pausa";
-});
+function syncPauseButton() {
+  document.getElementById("pauseBtn").textContent = state.paused ? "Reanudar" : "Pausar";
+  document.getElementById("pauseBtn").setAttribute("aria-pressed", String(state.paused));
+  document.getElementById("liveLabel").textContent = state.paused ? "EN PAUSA" : "EN VIVO";
+}
+function togglePause() { state.paused = !state.paused; syncPauseButton(); invalidate(); }
+document.getElementById("pauseBtn").addEventListener("click", togglePause);
 document.getElementById("speedDown").addEventListener("click", () => state.speed = clamp(state.speed - 0.25, 0.25, 5));
 document.getElementById("speedUp").addEventListener("click", () => state.speed = clamp(state.speed + 0.25, 0.25, 5));
 document.querySelector(".tool-grid").addEventListener("click", (event) => {
   const btn = event.target.closest("button[data-tool]");
   if (!btn) return;
-  state.activeTool = btn.dataset.tool;
+  state.activeTool = state.activeTool === btn.dataset.tool ? null : btn.dataset.tool;
+  document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === state.activeTool)));
+  invalidate();
   state.toolRadius = toolDefs[state.activeTool]?.radius || 210;
   document.getElementById("toolHint").textContent = `${toolDefs[state.activeTool]?.tip || "Intervencion seleccionada"} Rueda para ajustar radio, click en el mapa para aplicar.`;
 });
-document.getElementById("saveBtn").addEventListener("click", () => {
-  localStorage.setItem("evo-save", JSON.stringify(state));
-  state.lastEvent = "Partida guardada en este navegador";
-});
-document.getElementById("loadBtn").addEventListener("click", () => {
-  const saved = localStorage.getItem("evo-save");
-  if (!saved) return;
-  Object.assign(state, JSON.parse(saved));
-  document.getElementById("setup").classList.add("hidden");
-  updateSelection();
-});
+function saveWorld() {
+  if (!state.started) return;
+  const snapshot = { ...state, selected: null, selectedId: state.selected?.id || null, activeTool: null };
+  state.lastEvent = remember("evo-save", JSON.stringify(snapshot))
+    ? "Partida guardada en este navegador" : "No se pudo guardar: no queda espacio en el navegador.";
+  updateHud();
+}
+
+function loadWorld() {
+  try {
+    const raw = localStorage.getItem("evo-save");
+    if (!raw) {
+      state.lastEvent = "Todavía no hay una partida guardada.";
+      document.getElementById("setupStatus").textContent = state.lastEvent;
+      updateHud(); return;
+    }
+    const saved = JSON.parse(raw);
+    if (!saved || !Array.isArray(saved.species) || !Array.isArray(saved.creatures)
+      || !Array.isArray(saved.resources) || !saved.camera || !Number.isFinite(saved.worldSize)) {
+      throw new Error("La partida no tiene un formato válido.");
+    }
+    const ids = new Set(saved.species.map(sp => sp?.id));
+    if (saved.worldSize <= 0 || !saved.env || !saved.envTarget
+      || ![saved.camera.x, saved.camera.y, saved.camera.zoom].every(Number.isFinite)
+      || saved.camera.zoom <= 0
+      || !saved.species.every(sp => sp && sp.traits && ["producer", "herbivore", "carnivore"].includes(sp.class))
+      || !saved.creatures.every(c => c && ids.has(c.speciesId)
+        && [c.id, c.x, c.y, c.vx, c.vy, c.health, c.maxHealth, c.energy, c.age, c.size, c.cooldown].every(Number.isFinite))
+      || !saved.resources.every(r => r && [r.x, r.y, r.amount, r.max, r.radius].every(Number.isFinite))) {
+      throw new Error("La partida contiene datos incompletos o inválidos.");
+    }
+    const selectedId = saved.selectedId ?? saved.selected?.id;
+    Object.assign(state, saved, { started: true, activeTool: null });
+    state.creatures = state.creatures.slice(0, MAX_CREATURES);
+    state.resources = state.resources.slice(0, MAX_RESOURCES);
+    state.corpses = (state.corpses || []).slice(0, MAX_CORPSES);
+    state.zones = state.zones || [];
+    state.selected = state.creatures.find(c => c.id === selectedId) || null;
+    state.nextCreatureId = Math.max(state.nextCreatureId || 1, ...state.creatures.map(c => c.id + 1));
+    spriteCache.clear(); proceduralSprites.clear(); selectionKey = null; speciesListSignature = "";
+    rebuildSpeciesIndex(); rebuildSpatialIndexes(); recalcSpecies();
+    simulationAccumulator = 0;
+    document.getElementById("setup").classList.add("hidden");
+    document.getElementById("app").classList.add("playing");
+    state.lastEvent = "Partida cargada";
+    syncPauseButton(); syncEnvControls(); updateSelection(); updateSpeciesList(); updateHud(); invalidate();
+  } catch (error) {
+    document.getElementById("setupStatus").textContent = `No se pudo cargar: ${error.message}`;
+    state.lastEvent = "No se pudo cargar la partida guardada.";
+    updateHud();
+  }
+}
+document.getElementById("saveBtn").addEventListener("click", saveWorld);
+document.getElementById("loadBtn").addEventListener("click", loadWorld);
+document.getElementById("setupLoad").addEventListener("click", loadWorld);
 document.getElementById("resetBtn").addEventListener("click", restartCurrentWorld);
 document.getElementById("newWorldBtn").addEventListener("click", () => location.reload());
 
@@ -1494,8 +1792,8 @@ function updateManualSpeciesCounter() {
   const noImageButton = document.getElementById("manualNoImages");
   counter.textContent = `${count}/${MAX_MANUAL_SPECIES_PER_WORLD}`;
   const atLimit = count >= MAX_MANUAL_SPECIES_PER_WORLD;
-  imageButton.disabled = atLimit;
-  noImageButton.disabled = atLimit;
+  imageButton.disabled = atLimit || !configState.hasTogetherApiKey || creatingSpecies;
+  noImageButton.disabled = atLimit || creatingSpecies;
   counter.classList.toggle("limit", atLimit);
 }
 
@@ -1503,18 +1801,23 @@ function buildManualTraits() {
   const box = document.getElementById("manualTraits");
   box.innerHTML = "";
   const speciesClass = document.getElementById("manualClass")?.value || "herbivore";
-  const defaults = { size: 5, speed: speciesClass === "carnivore" ? 8 : 6, attack: 5, defense: 4, perception: 6, fertility: speciesClass === "producer" ? 18 : 10, metabolism: 6, foodEfficiency: 5, toxicity: 1 };
+  const defaults = { size: 5, speed: speciesClass === "producer" ? 0 : speciesClass === "carnivore" ? 8 : 6, attack: speciesClass === "carnivore" ? 5 : 0, defense: 4, perception: 6, fertility: speciesClass === "producer" ? 18 : 10, metabolism: 6, foodEfficiency: 5, toxicity: 1 };
   for (const key of traitKeys) {
     const label = document.createElement("label");
     label.textContent = traitLabels[key];
     const max = traitMax(key, speciesClass);
     const min = traitMin(key, speciesClass);
-    label.innerHTML += `<input type="number" min="${min}" max="${max}" value="${defaults[key]}" data-trait="${key}">`;
+    label.innerHTML += `<input type="number" min="${min}" max="${max}" value="${defaults[key]}" data-trait="${key}" ${key === "attack" && speciesClass !== "carnivore" ? "disabled" : ""}>`;
     box.appendChild(label);
   }
 }
 
 async function createManual(withImages) {
+  if (creatingSpecies) return;
+  if (state.creatures.length >= MAX_CREATURES) {
+    document.getElementById("manualStatus").textContent = "El ecosistema alcanzó su límite de población. Esperá a que haya espacio.";
+    return;
+  }
   if ((state.manualSpeciesCreated || 0) >= MAX_MANUAL_SPECIES_PER_WORLD) {
     document.getElementById("manualStatus").textContent = `Limite alcanzado: ${MAX_MANUAL_SPECIES_PER_WORLD}/${MAX_MANUAL_SPECIES_PER_WORLD} especies creadas en este mundo.`;
     updateManualSpeciesCounter();
@@ -1541,6 +1844,8 @@ async function createManual(withImages) {
     spritePrompt: `Simple filled top-down game sprite of an aquatic species: ${desc}, filled colored body, not outline-only, head/front facing exactly to the right, tail/back to the left, solid chroma blue background (#0047ff), avoid blue creature colors, centered, no text`
   });
   const status = document.getElementById("manualStatus");
+  creatingSpecies = true;
+  updateManualSpeciesCounter();
   try {
     if (withImages) {
       showBusy("Creando especie", "Generando imagenes IA...");
@@ -1548,10 +1853,12 @@ async function createManual(withImages) {
       await addImagesToSpeciesWithRetry(sp, status);
     }
     state.species.push(sp);
+    speciesById.set(sp.id, sp);
     state.manualSpeciesCreated = (state.manualSpeciesCreated || 0) + 1;
     updateManualSpeciesCounter();
     const p = screenToWorld(innerWidth / 2, innerHeight / 2);
     for (let i = 0; i < 18; i++) spawnCreature(sp, p.x + rand(-160, 160), p.y + rand(-160, 160), 1);
+    rebuildSpatialIndexes(); recalcSpecies(); updateSpeciesList(); invalidate();
     state.lastEvent = `Especie creada: ${sp.name}`;
     document.getElementById("modal").classList.add("hidden");
     status.textContent = "";
@@ -1561,12 +1868,13 @@ async function createManual(withImages) {
     status.textContent = message;
     showBusyError("No se pudo crear la especie", message);
     logError(message);
-  }
+  } finally { creatingSpecies = false; updateManualSpeciesCounter(); }
 }
 
 document.getElementById("newSpeciesBtn").addEventListener("click", () => {
   updateManualSpeciesCounter();
   document.getElementById("modal").classList.remove("hidden");
+  document.getElementById("manualName").focus();
 });
 document.getElementById("closeModal").addEventListener("click", () => document.getElementById("modal").classList.add("hidden"));
 document.getElementById("busyClose").addEventListener("click", hideBusy);
@@ -1574,9 +1882,53 @@ document.getElementById("manualClass").addEventListener("change", buildManualTra
 document.getElementById("manualImages").addEventListener("click", () => createManual(true));
 document.getElementById("manualNoImages").addEventListener("click", () => createManual(false));
 
+function zoomCamera(multiplier) {
+  state.camera.zoom = clamp(state.camera.zoom * multiplier, 0.16, 2.2);
+  updateHud(); invalidate();
+}
+document.getElementById("qualitySelect").addEventListener("change", event => setQuality(event.target.value));
+document.getElementById("zoomIn").addEventListener("click", () => zoomCamera(1.2));
+document.getElementById("zoomOut").addEventListener("click", () => zoomCamera(1 / 1.2));
+document.getElementById("centerCamera").addEventListener("click", () => {
+  state.camera.x = state.worldSize / 2;
+  state.camera.y = state.worldSize / 2;
+  state.camera.zoom = clamp(Math.min(innerWidth, innerHeight) * 0.8 / state.worldSize, 0.16, 0.6);
+  updateHud(); invalidate();
+});
+function togglePanel(panelId, buttonId, force) {
+  const panel = document.getElementById(panelId);
+  const collapsed = force === undefined ? !panel.classList.contains("collapsed") : !force;
+  panel.classList.toggle("collapsed", collapsed);
+  document.getElementById(buttonId).setAttribute("aria-expanded", String(!collapsed));
+}
+document.getElementById("toggleEnvironment").addEventListener("click", () => {
+  togglePanel("environmentPanel", "toggleEnvironment");
+  if (innerWidth < 621) togglePanel("ecosystemPanel", "toggleSpecies", false);
+});
+document.getElementById("toggleSpecies").addEventListener("click", () => {
+  togglePanel("ecosystemPanel", "toggleSpecies");
+  if (innerWidth < 621) togglePanel("environmentPanel", "toggleEnvironment", false);
+});
+if (innerWidth < 901) togglePanel("ecosystemPanel", "toggleSpecies", false);
+if (innerWidth < 621) togglePanel("environmentPanel", "toggleEnvironment", false);
+document.getElementById("speciesList").addEventListener("click", event => {
+  const button = event.target.closest("[data-species-index]");
+  if (!button) return;
+  const sp = state.species[Number(button.dataset.speciesIndex)];
+  const creature = state.creatures.find(c => c.speciesId === sp?.id);
+  if (!creature) return;
+  state.selected = creature;
+  state.camera.x = creature.x;
+  state.camera.y = creature.y;
+  selectionKey = null;
+  updateSelection(); updateSpeciesList(); invalidate();
+});
+document.querySelectorAll(".menu-items button").forEach(button => button.addEventListener("click", () => { document.getElementById("worldMenu").open = false; }));
+
 buildEnvControls();
 buildManualTraits();
 updateManualSpeciesCounter();
 initEnvironment();
+setQuality(quality);
 loadConfigStatus();
-requestAnimationFrame(loop);
+frameRequest = requestAnimationFrame(loop);
