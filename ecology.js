@@ -42,6 +42,7 @@ function phenotype(genes, type) {
   const activity = 0.6 + t.metabolism * 0.09;
   const maxEnergy = 120 + t.size * 12;
   const tissue = 12 + t.size * 5;
+  const birthEnergy = maxEnergy * (type === "producer" ? 0.12 : 0.28);
   const upkeep = 0.16 + t.size * 0.035 + t.defense ** 2 * 0.002
     + t.perception ** 2 * 0.002 + t.toxicity ** 2 * 0.003
     + t.foodEfficiency ** 2 * 0.0015 + fertility ** 2 * 0.22
@@ -50,6 +51,8 @@ function phenotype(genes, type) {
     size: 4 + t.size * 2.2,
     maxHealth: 42 + t.size * 8 + t.defense * 2,
     maxEnergy,
+    // Stored root energy is finite and still pays maintenance, repair and buds.
+    rootReserve: type === "producer" ? maxEnergy * 0.5 : 0,
     // Hunting also pays attack and injury-repair costs. Calibrate resting upkeep
     // separately so a finite meal can fund the next hunt and occasional offspring.
     basal: upkeep * (0.55 + t.metabolism * 0.12) * (type === "carnivore" ? 0.75 : 1),
@@ -63,8 +66,8 @@ function phenotype(genes, type) {
     photosynthesis: (2.2 + t.size * 0.32) * activity * (0.5 + t.foodEfficiency * 0.08) * (0.7 + t.perception * 0.05),
     fertility,
     // Reserves AND edible tissue of a baby are paid by the parent.
-    birthCost: maxEnergy * 0.28 + tissue + 6,
-    birthEnergy: maxEnergy * 0.28,
+    birthCost: birthEnergy + tissue + 6,
+    birthEnergy,
     birthWait: type === "carnivore" ? 60 + (1 - fertility) * 140 : 20 + (1 - fertility) * 65,
     maturity: (type === "producer" ? 12 : type === "carnivore" ? 35 : 18) / activity,
     lifespan: (type === "producer" ? 420 : 300) + t.size * 12,
@@ -254,8 +257,10 @@ function updateCreatures(dt) {
     }
     if (c.energy < 0) c.health = Math.max(0, c.health - dt * (0.6 + Math.abs(c.energy) * 0.15));
     if (c.age > body.lifespan) c.health = Math.max(0, c.health - dt * 3);
-    const fertile = body.fertility > 0 && c.health > c.maxHealth * 0.65 && c.age >= body.maturity
-      && c.energy >= c.maxEnergy * 0.76 && c.cooldown <= 0 && state.creatures.length + newborns.length < MAX_CREATURES;
+    const plant = sp.class === "producer";
+    const fertile = body.fertility > 0 && c.health > c.maxHealth * (plant ? 0.35 : 0.65) && c.age >= body.maturity
+      && c.energy >= (plant ? body.birthCost + c.maxEnergy * 0.1 : c.maxEnergy * 0.76)
+      && c.cooldown <= 0 && state.creatures.length + newborns.length < MAX_CREATURES;
     if (fertile && Math.random() < 1 - Math.exp(-dt * 0.09 * body.fertility) && !isCrowdedForReproduction(c, sp)) {
       const genes = inheritGenes(c, sp);
       const childSpecies = maybeMutateSpecies(sp, c, genes);
@@ -347,13 +352,16 @@ function releaseFoodClaim(brain) {
 
 function targetAlive(target, kind) {
   return !!target && (kind === "producer" || kind === "prey" ? target.health > 0 && target.energy > -35 && !isProtected(target)
+    && (kind !== "producer" || edibleFood(target, kind) > 0.1)
     : target.amount - (kind === "alga" ? target.root || 0 : 0) > 0.1);
 }
 
 function edibleFood(target, kind) {
   if (kind === "alga") return Math.max(0, target.amount - (target.root || 0));
   if (kind === "corpse") return target.amount;
-  return Math.max(0, target.energy) + Math.max(0, (target.tissue || 0) - (kind === "producer" ? bodyOf(target).holdfast : 0));
+  const body = kind === "producer" ? bodyOf(target) : null;
+  return Math.max(0, target.energy - (body?.rootReserve || 0))
+    + Math.max(0, (target.tissue || 0) - (body?.holdfast || 0));
 }
 
 function detectionRange(observer, target, baseRange) {
@@ -444,11 +452,12 @@ function eatProducer(c, sp, dt, counts, cachedBrain) {
     bite = Math.min(bite, Math.max(0, target.amount - (target.root || 0)));
     target.amount -= bite;
   } else {
-    const energy = Math.min(bite, Math.max(0, target.energy));
+    const plantBody = bodyOf(target);
+    const energy = Math.min(bite, Math.max(0, target.energy - plantBody.rootReserve));
     target.energy -= energy;
-    const tissue = Math.min(bite - energy, Math.max(0, target.tissue - bodyOf(target).holdfast));
+    const tissue = Math.min(bite - energy, Math.max(0, target.tissue - plantBody.holdfast));
     target.tissue -= tissue;
-    const healthLoss = tissue / Math.max(1, bodyOf(target).tissue) * target.maxHealth;
+    const healthLoss = tissue / Math.max(1, plantBody.tissue) * target.maxHealth;
     damageCreature(target, healthLoss);
     bite = energy + tissue;
   }

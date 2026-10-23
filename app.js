@@ -9,7 +9,8 @@ const traitKeys = [
 const MAX_INITIAL_SPECIES_PER_TYPE = 4;
 const MAX_MANUAL_SPECIES_PER_WORLD = 4;
 const INITIAL_HERBIVORES_PER_SPECIES = 24;
-const INITIAL_CARNIVORES_PER_SPECIES = Math.max(1, Math.round(INITIAL_HERBIVORES_PER_SPECIES / 6));
+const INITIAL_PREY_PER_CARNIVORE = 6;
+const INITIAL_CARNIVORES_PER_SPECIES = Math.max(1, Math.round(INITIAL_HERBIVORES_PER_SPECIES / INITIAL_PREY_PER_CARNIVORE));
 const MAX_SIMULATION_SPEED = 10;
 const MAX_ECOLOGY_STEP = 1 / 6;
 
@@ -393,12 +394,18 @@ function seedWorld(speciesList) {
   initHabitats();
 
   for (let i = 0; i < 90; i++) spawnResource(rand(0, state.worldSize), rand(0, state.worldSize), rand(35, 120));
+  const herbivoreSpecies = state.species.filter(sp => sp.class === "herbivore").length;
+  const carnivoreSpecies = state.species.filter(sp => sp.class === "carnivore").length;
+  // Diversity shares a finite starting prey supply. Afterwards only ecology sets population sizes.
+  const hunterBudget = Math.min(carnivoreSpecies * INITIAL_CARNIVORES_PER_SPECIES,
+    Math.max(carnivoreSpecies, Math.floor(herbivoreSpecies * INITIAL_HERBIVORES_PER_SPECIES / INITIAL_PREY_PER_CARNIVORE)));
+  let hunterIndex = 0;
   for (const sp of state.species) {
     const count = sp.class === "producer"
       ? 42
       : sp.class === "herbivore"
         ? INITIAL_HERBIVORES_PER_SPECIES
-        : INITIAL_CARNIVORES_PER_SPECIES;
+        : Math.floor(hunterBudget / carnivoreSpecies) + (hunterIndex++ < hunterBudget % carnivoreSpecies ? 1 : 0);
     for (let i = 0; i < count; i++) spawnCreature(sp, rand(120, state.worldSize - 120), rand(120, state.worldSize - 120), 0, initialGenes(sp));
   }
   rebuildSpatialIndexes();
@@ -947,6 +954,7 @@ function updateSelection() {
       <div class="selection-heading"><span class="selection-avatar" style="color:${escapeHtml(sp.color)}"><svg><use href="#${sp.class === "producer" ? "i-leaf" : "i-fish"}"/></svg></span><div><span class="species-chip">${className(sp.class)} · Individuo #${c.id}</span><h2>${escapeHtml(sp.name)}</h2></div></div>
       <p class="hint">${escapeHtml(sp.description)}</p>
       <p class="hint lineage-status">${escapeHtml(evolutionSummary(sp))}</p>
+      ${sp.class === "producer" ? `<p class="hint">Las raíces pueden guardar hasta ${Math.round(bodyOf(c).rootReserve)} de energía fuera del alcance del pastoreo. Esa reserva se gasta al vivir, recuperarse y formar brotes; no evita el hambre ni la vejez.</p>` : ""}
       <div class="detail-grid">${["Estado", "Generación", "Edad", "Energía", "Salud", "Población", "Oxígeno local", "Nutrientes locales", "Cobertura vegetal", "Gasto basal"].map((label, i) => `<div class="detail"><span>${label}</span><b data-selection="${i}"></b></div>`).join("")}</div>
       <p class="hint"><b>Dieta:</b> ${escapeHtml(sp.diet)}</p>
       <p class="hint"><b>Hábitat:</b> ${escapeHtml(sp.habitat)}</p>
