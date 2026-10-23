@@ -61,12 +61,12 @@ test('feeding restores animal energy only inside the brush and respects the cap'
   game.run('spawnCreature(state.species[0], 500, 500, 1); spawnCreature(state.species[2], 510, 500, 1); state.creatures[2].energy=80; state.creatures[3].energy=120; rebuildSpatialIndexes()');
   const result = cast(game, 'feed');
   assert.equal(result.affected, 2);
-  assert.equal(game.run('state.creatures[0].energy'), 125);
+  assert.equal(game.run('state.creatures[0].energy'), game.run('Math.min(125,state.creatures[0].maxEnergy)'));
   assert.equal(game.run('state.creatures[1].energy'), 80);
   assert.equal(game.run('state.creatures[2].energy'), 80);
-  assert.equal(game.run('state.creatures[3].energy'), 130);
-  cast(game, 'feed');
-  assert.equal(game.run('state.creatures[0].energy'), 130);
+  assert.equal(game.run('state.creatures[3].energy'), game.run('Math.min(165,state.creatures[3].maxEnergy)'));
+  for(let i=0;i<4;i++) cast(game, 'feed');
+  assert.equal(game.run('state.creatures[0].energy'), game.run('state.creatures[0].maxEnergy'));
   assert.equal(cast(game, 'feed').ok, false);
 });
 

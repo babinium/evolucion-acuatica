@@ -1818,3 +1818,15 @@ h1 em {
 @media (max-width: 620px) {
   .left-panel:not(.collapsed) ~ .power-dock { display: none; }
 }
+
+/* Explain local ecology without continuously rebuilding the inspector. */
+.ecology-explainer { color: #9fb8bd; font-size: 10px; line-height: 1.65; margin: 12px 0; }
+.env-row { grid-template-columns: 82px minmax(40px,1fr) 22px; gap: 6px; }
+.ecology-indicators { display: grid; gap: 9px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; }
+.ecology-indicators span { display: flex; justify-content: space-between; gap: 10px; font-size: 10px; color: #a9c1c1; }
+.ecology-indicators b { color: #abe0c6; font-variant-numeric: tabular-nums; }
+.inherited-hint { margin: 14px 0 10px; font-size: 10px; }
+.trait-bar { cursor: help; }
+.trait-bar { grid-template-columns: 72px 1fr 26px; }
+.trait-bar:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+.left-panel.collapsed { display: none; }

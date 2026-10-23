@@ -7,7 +7,7 @@ test('a complete world starts without credentials or generation requests', async
   const game = createGame({fetch: async url => {calls.push(url); return {ok: true, json: async () => ({missing: [], canUseAiImages: false, canUseAiText: false})};}});
   await game.run('startWorld(false)');
   assert.equal(game.run('state.started'), true);
-  assert.equal(game.run('state.creatures.length'), 74);
+  assert.equal(game.run('state.creatures.length'), 70);
   assert.equal(calls.some(url => url.includes('generate-')), false);
 });
 

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 
-export function createGame({ baseline = false, fetch: fetchImpl, storage } = {}) {
+export function createGame({ baseline = false, seed = 123456, ref, fetch: fetchImpl, storage } = {}) {
   const elements = new Map();
   const listeners = new Map();
   const canvasContext = new Proxy({}, { get(target, key) {
@@ -24,10 +24,7 @@ export function createGame({ baseline = false, fetch: fetchImpl, storage } = {})
     return el;
   }
   const values = storage ?? new Map();
-  let randomSeed = 123456;
-  const math = Object.create(Math);
-  math.random = () => {randomSeed = (Math.imul(randomSeed, 1664525) + 1013904223) >>> 0; return randomSeed / 4294967296;};
-  const sandbox = {console, Math: math, Date: class extends Date { static now() { return 1700000000000; } }, Map, Set, JSON, Uint8Array, Uint8ClampedArray, URL, AbortController, AbortSignal, performance,
+  const sandbox = {console, Date: class extends Date { static now() { return 1700000000000; } }, Map, Set, JSON, Uint8Array, Uint8ClampedArray, URL, AbortController, AbortSignal, performance,
     innerWidth: 1366, innerHeight: 768,
     navigator: {hardwareConcurrency: 2, deviceMemory: 4},
     document: {getElementById: element, querySelector: element, querySelectorAll: () => [], createElement: element, activeElement: null, hidden: false, addEventListener(name, fn) {listeners.set(`document:${name}`, fn);}},
@@ -40,10 +37,21 @@ export function createGame({ baseline = false, fetch: fetchImpl, storage } = {})
   sandbox.window = sandbox;
   sandbox.addEventListener = (name, fn) => listeners.set(`window:${name}`, fn);
   const context = vm.createContext(sandbox);
-  if (!baseline) for (const file of ['spatial-grid.js', 'powers.js']) {
-    if (fs.existsSync(file)) vm.runInContext(fs.readFileSync(file, 'utf8'), context);
+  vm.runInContext(`let testSeed = ${seed >>> 0}; Math.random = () => {
+    testSeed = (Math.imul(testSeed,1664525) + 1013904223) >>> 0; return testSeed/4294967296;
+  };`, context);
+  const readSource = file => ref ? execFileSync('git', ['show', `${ref}:${file}`], {encoding: 'utf8', stdio:['ignore','pipe','ignore']}) : fs.readFileSync(file, 'utf8');
+  const sources = [];
+  if (!baseline) for (const file of ['spatial-grid.js', 'ecology.js', 'powers.js']) {
+    try { sources.push(readSource(file)); } catch (error) { if (!ref) throw error; }
   }
-  const source = baseline ? execFileSync('git', ['show', 'origin/main:app.js'], {encoding: 'utf8'}) : fs.readFileSync('app.js', 'utf8');
-  vm.runInContext(source, context, {filename: 'app.js'});
-  return {run: code => vm.runInContext(code, context), context, elements, listeners, values, element};
+  sources.push(baseline ? execFileSync('git', ['show', 'origin/main:app.js'], {encoding: 'utf8'}) : readSource('app.js'));
+  // Keep ordinary function calls lexical, as in a browser, instead of routing each
+  // call through Node's slow context-global proxy. All versions use this same harness.
+  const run = vm.runInContext(`(function() {
+    const {Math, Object, Array, Number, String, Date, Map, Set, JSON} = globalThis;
+    ${sources.join('\n')}
+    return code => eval(code);
+  })()`, context, {filename: 'game-test.js'});
+  return {run, context, elements, listeners, values, element};
 }

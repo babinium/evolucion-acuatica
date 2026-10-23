@@ -17,7 +17,8 @@ Como alternativa podés usar Node.js 20 o posterior: `node server.js` o `npm run
 El modo inicial **Bajo consumo** limita el dibujo a 30 FPS y reduce la resolución interna. **Equilibrado** permite hasta 45 FPS y **Más detalle** hasta 60 FPS. Podés cambiarlo desde Ambiente; la preferencia queda guardada en el navegador. Son límites, no una garantía de FPS en todos los equipos.
 
 - La simulación tiene pasos de 30 Hz independientes de la calidad visual. Si el equipo no alcanza, limita el trabajo de recuperación para que los controles sigan respondiendo.
-- Una grilla espacial busca alimento, amenazas y vecinos por cercanía. Las especies y las poblaciones de cada cuadrante tienen índices reutilizables.
+- Una grilla espacial busca alimento, amenazas y vecinos por cercanía. Los sentidos de los animales se escalonan unas cinco veces por segundo y su alcance tiene un límite; el movimiento, la alimentación y los ataques siguen avanzando en cada paso. Los cuerpos se calculan al nacer y se reutilizan.
+- Solo 16 zonas actualizan las reservas locales de nutrientes, el oxígeno y las corrientes. No se simulan partículas de agua ni redes neuronales por individuo.
 - Los peces y las plantas locales se dibujan una vez por especie y se reutilizan. Los paneles se actualizan con menor frecuencia y no usan desenfoque de fondo.
 - La pestaña oculta suspende completamente la simulación y el dibujo. Al volver no intenta recuperar todo el tiempo transcurrido. Al pausar, el mapa solo se vuelve a dibujar cuando cambia.
 - Para mantener acotada la memoria hay un máximo de 2.400 individuos, 2.400 manchas de algas y 1.200 cadáveres. Al alcanzar el límite de individuos se detienen los nacimientos; no se eliminan individuos vivos para reducir consumo. Los límites son iguales en todas las calidades.
@@ -46,12 +47,52 @@ Los seis poderes funcionan también en pausa, sin invocar APIs. Cada uno tiene u
 | 2 | Proteger | Refugio de 80 segundos de simulación: bloquea ataques, catástrofes, falta de oxígeno y toxicidad; regenera salud a quienes están dentro, incluidos los que llegan después. No detiene el hambre ni el envejecimiento. |
 | 3 | Catástrofe | Quita 60 de salud a los habitantes sin escudo. Las bajas, los cadáveres y las extinciones se registran de inmediato, incluso en pausa. |
 | 4 | Favorecer | Agrega individuos de la especie elegida en el selector del poder; no depende de mantener vivo al individuo seleccionado. |
-| 5 | Alimentar | Entrega hasta 45 de energía a cada herbívoro y carnívoro del área, hasta un máximo de 130. No afecta plantas, individuos muertos o animales ya saciados. |
+| 5 | Alimentar | Entrega hasta 45 de energía a cada herbívoro y carnívoro del área, hasta llenar las reservas del individuo (dependen del tamaño). No afecta plantas, individuos muertos o animales con reservas llenas. |
 | 6 | Limpiar agua | Zona de 60 segundos de simulación con oxígeno mínimo 60 y toxicidad máxima 20 para los organismos y las algas del área. Las condiciones globales y el exterior de la zona no cambian. |
 
 **Mantener poder activo** permite repetir aplicaciones sin volver a seleccionarlo. Desmarcá la casilla para volver automáticamente a explorar después de una aplicación exitosa. Arrastrar desplaza la cámara sin lanzar el poder. Para cancelar podés usar Escape, clic derecho, el botón × o volver a pulsar el mismo poder.
 
 Las duraciones avanzan al ritmo de la simulación y se congelan en pausa; se conservan al guardar/cargar. Hasta 12 refugios o zonas de agua limpia pueden permanecer activos. Volver a aplicar cerca del centro de una zona del mismo tipo renueva su duración y ajusta su radio. Los límites de población y de algas también se respetan al usar poderes; cuando no hay espacio u objetivos, el aviso lo explica y el poder sigue disponible para intentar en otra zona.
+
+## Ambiente y competencia
+
+Es un modelo de juego: los controles ambientales usan una escala relativa de 0 a 100, no grados Celsius ni concentraciones físicas. El panel cambia el aporte global; el inspector muestra el oxígeno y los nutrientes realmente disponibles en la zona del individuo.
+
+| Control | Mecánica |
+| --- | --- |
+| Temperatura | El frío ralentiza actividad y gasto; el calor aumenta el gasto. La fotosíntesis tiene un óptimo intermedio y los extremos dañan la salud. |
+| Luz | Multiplica la fotosíntesis y la colonización de algas. A cero, ninguna crea energía nueva; las reservas existentes todavía pueden consumirse. |
+| Oxígeno | La respiración y la descomposición lo consumen; la fotosíntesis lo devuelve localmente. La escasez reduce movimiento y digestión, impide recuperarse y causa daño. El metabolismo alto exige más oxígeno. |
+| Nutrientes | Plantas y algas consumen una reserva compartida en cada zona. Su agotamiento limita el crecimiento; el aporte exterior y una parte de los restos y desechos la reponen. |
+| Contaminación | Reduce el crecimiento y daña la salud por encima de 25. Las toxinas del cuerpo son una defensa alimentaria y no dan inmunidad a este control. |
+| Corriente | Arrastra animales y cadáveres, mezcla nutrientes entre zonas y renueva el oxígeno. No regala velocidad de nado. Los productores permanecen anclados. |
+| Algas nuevas | Controla la colonización de nuevas manchas de algas, pagando nutrientes locales y dependiendo también de luz, temperatura y contaminación. A cero dejan de aparecer manchas naturales nuevas. |
+
+La comida es finita. Un herbívoro consume reservas y después tejido de una planta, o reduce la cantidad de una mancha de algas. En las plantas, el pastoreo deja tejido de anclaje; recuperar hojas y salud gasta la energía obtenida por fotosíntesis. El hambre, la edad y los daños ambientales todavía pueden matarlas. En las algas base, el pastoreo deja un sustrato vivo no comestible (8% de su tamaño inicial); su rebrote paga nutrientes y necesita luz. La oscuridad o la contaminación pueden agotar también ese sustrato. Una mancha completamente muerta no revive por usar un paso de tiempo mayor. Un carnívoro gasta energía para atacar; recibe alimento al consumir el único cadáver que deja la presa. La defensa, las toxinas, la asimilación y la presencia de competidores modifican la conveniencia de cada comida. Los animales saciados descansan hasta volver a tener hambre; huir rápido consume reservas. Recuperar salud también cuesta energía y requiere agua adecuada. La vegetación reduce la detección de animales y ofrece refugios y oportunidades de acecho; los cuerpos grandes resultan más visibles. La cobertura se calcula con los productores vivos de cada zona.
+
+Los nacimientos necesitan madurez, salud, reservas y espacio local; la densidad cuenta a los competidores de otras especies. El progenitor paga la energía **y el tejido comestible** de la cría. Los carnívoros maduran más tarde y espacian más sus crías. No hay un cupo que fuerce una proporción fija entre carnívoros y herbívoros. El inicio estándar tiene 42 productores, 24 herbívoros y 4 carnívoros por especie de cada grupo; el resto depende de comida, ambiente y supervivencia. Las extinciones forman parte del juego.
+
+## Rasgos y evolución
+
+Cada individuo tiene genes propios. La población inicial ya contiene variación; las crías heredan los genes de su progenitor y pueden mutarlos. El inspector muestra esos valores con un decimal, no solo la plantilla de la especie, y explica ventajas y costos al pasar el cursor.
+
+| Rasgo | Ventaja | Costo o límite |
+| --- | --- | --- |
+| Tamaño | Más salud, reservas, tejido y capacidad de ingestión. | Mayor mantenimiento, menor agilidad, mayor visibilidad y crías más costosas. |
+| Velocidad | Nadar, perseguir y escapar más rápido. | Mantener músculos rápidos cuesta energía; el escape rápido consume reservas extra. |
+| Ataque | Más daño de caza. | Mantenimiento y gasto durante el ataque. Solo existe para carnívoros. |
+| Defensa | Reduce el daño físico y la velocidad de consumo de una planta. | Mantenimiento y menor agilidad. |
+| Percepción | Detectar alimento y amenazas más lejos; en productores mejora la captación de nutrientes. | Mantenimiento; el alcance de los animales está acotado. |
+| Fertilidad | Más oportunidades de nacimiento y menor espera entre crías. | Mantenimiento y reservas pagadas por cada cría; cero implica esterilidad. |
+| Metabolismo | Mayor actividad, digestión y fotosíntesis. | Más gasto y demanda de oxígeno, envejecimiento más rápido. |
+| Eficiencia | Aprovechar mejor el alimento o la luz. | Mantener ese sistema cuesta energía. No crea comida adicional en la presa. |
+| Toxicidad | Disuade a consumidores, reduce su aprovechamiento y los envenena al comer. | Fabricar toxinas cuesta energía; no protege de contaminación. |
+
+Se quitaron del editor los rasgos sin uso para esa dieta: los productores no nadan ni atacan; los herbívoros no usan ataque. Los demás rasgos siguen activos porque sus cálculos son pequeños y sus efectos se usan en la simulación.
+
+La selección actúa sobre la supervivencia y los descendientes de cada individuo. Cuando una cría acumula suficiente diferencia genética respecto de su linaje, aparece una rama nueva; el progenitor conserva su especie y sus genes. También puede ocurrir con evolución lenta, mediante acumulación de cambios. Se frena la creación de ramas al registrar 48 especies; los genes siguen variando dentro de los linajes existentes. Las mutaciones reutilizan las imágenes y no llaman a ninguna API. No se garantiza que todos los linajes o dietas sobrevivan a cualquier condición.
+
+Las partidas anteriores se migran al cargar: reciben genes individuales y reservas locales; se conservan individuos, selección, ambiente y poderes. Una partida guardada con este modelo conserva sus genes y reservas de agua.
 
 ## IA opcional
 
@@ -85,8 +126,13 @@ Las claves se obtienen en [Google AI Studio](https://aistudio.google.com/app/api
 ```sh
 npm test
 npm run benchmark
+node scripts/ecology-audit.mjs --seconds=960
 ```
 
-Las pruebas usan las herramientas estándar de Node y Python, sin instalar paquetes. Cubren partidas sin claves, guardado/carga, pausa, búsqueda espacial frente a búsqueda exhaustiva, límites de memoria, pestañas ocultas, igualdad entre calidades y los contratos de las APIs con respuestas simuladas. No consumen créditos ni prueban credenciales reales.
+Las pruebas usan las herramientas estándar de Node y Python, sin instalar paquetes. Cubren los siete controles ambientales y los nueve rasgos, alimento finito, persecución, herencia y especiación, costos de reproducción, migración de partidas, poderes, pausa, búsqueda espacial, límites de memoria, pestañas ocultas, igualdad entre calidades y contratos de APIs con respuestas simuladas. No consumen créditos ni prueban credenciales reales.
 
 El benchmark compara `origin/main` con la copia de trabajo usando la misma semilla, 12 especies, 1.200 individuos y 690 manchas de algas, en un contexto VM de Node. Mide 40 actualizaciones y descarta las primeras diez; informa mediana y percentil 95. Mide CPU de la simulación, no renderizado ni FPS del navegador. Para medir solo la versión actual: `npm run benchmark -- --optimized-only`.
+
+Para comparar contra una revisión concreta, usá `node scripts/benchmark.mjs --compare=a701582`. El mismo ejecutor y generador aleatorio se aplican a ambas versiones. El ejecutor conserva funciones en un ámbito léxico para evitar el costo artificial de resolver cada llamada a través del objeto global de la VM; por eso los tiempos no son comparables con mediciones hechas con el ejecutor anterior.
+
+`ecology-audit.mjs` sigue tres semillas reproducibles (123456, 42 y 2026), sin variación ambiental aleatoria ni intervenciones, y registra cada minuto poblaciones, recursos, generaciones, linajes, reservas locales y valores finitos. Usa pasos de 1/6 s, el paso máximo a velocidad 5×. Podés elegir semillas con `--seeds=42,2026` y una duración con `--seconds=960`. No simula el renderizado ni prueba que el ecosistema permanezca equilibrado indefinidamente.

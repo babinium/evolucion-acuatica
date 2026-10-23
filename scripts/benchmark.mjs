@@ -1,7 +1,10 @@
 import { createGame } from '../tests/harness.mjs';
 
-for (const baseline of (process.argv.includes("--optimized-only") ? [false] : [true, false])) {
-  const game = createGame({baseline});
+const compare = process.argv.find(arg => arg.startsWith("--compare="))?.slice(10);
+const versions = compare ? [{ref: compare, label: compare}, {label: "optimized"}]
+  : (process.argv.includes("--optimized-only") ? [{label:"optimized"}] : [{baseline:true,label:"original"},{label:"optimized"}]);
+for (const {baseline = false, ref, label} of versions) {
+  const game = createGame({baseline, ref});
   game.run(`
     state.worldSize = 5200;
     seedWorld(fallbackSpecies(4, 4, 4));
@@ -22,5 +25,5 @@ for (const baseline of (process.argv.includes("--optimized-only") ? [false] : [t
     times.sort((a,b) => a-b);
     return {population: state.creatures.length, medianMs: +times[15].toFixed(2), p95Ms: +times[28].toFixed(2)};
   })()`);
-  console.log(JSON.stringify({version: baseline ? 'original' : 'optimized', ...times}));
+  console.log(JSON.stringify({version: label, ...times}));
 }

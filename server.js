@@ -85,7 +85,7 @@ Return ONLY valid JSON, no markdown. Use this schema:
       "weaknesses": ["Spanish text"],
       "traits": {
         "size": 1-10,
-        "speed": "producers 0-2, herbivores 1-10, carnivores 6-10",
+        "speed": "producers 0, herbivores 1-10, carnivores 6-10",
         "attack": 0-10,
         "defense": 0-10,
         "perception": 1-10,
@@ -101,12 +101,16 @@ Return ONLY valid JSON, no markdown. Use this schema:
 }
 
 Balance rules:
-- Producers have attack 0, low speed, use nutrients/light, may have toxicity or defense.
-- Herbivores have attack 0, can have defense, speed, camouflage, toxicity.
-- Carnivores can eat herbivores and other carnivores; attack and aggression matter.
+- Producers have attack 0 and speed 0; they are anchored and use light plus shared local nutrients.
+- Herbivores have attack 0, can have defense, speed, perception, toxicity.
+- Carnivores hunt animals and eat finite corpses; attack, speed, size and perception matter.
 - Carnivores must start fast enough to hunt: speed should be between 6 and 10.
-- Bigger size increases defense/reserves but should imply higher metabolism.
-- High speed, defense, attack, perception, toxicity, or fertility should have tradeoffs.
+- Bigger size increases health and energy reserves, costs upkeep and reduces agility. Metabolism is a separate tradeoff.
+- High metabolism accelerates activity and digestion/photosynthesis but increases energy and oxygen demand and aging.
+- Perception extends animal senses and improves nutrient uptake in producers. Carnivores should start with perception 5-9.
+- Efficiency improves assimilation, body toxins poison consumers, and defense reduces damage; all cost energy to maintain.
+- Fertility affects birth opportunities and recovery time. Every baby costs the parent both reserves and edible tissue.
+- High speed, defense, attack, perception, toxicity, or fertility should have tradeoffs. Avoid maximizing every trait.
 - Make species varied, visually memorable, and mechanically fair.
 `;
 }

@@ -42,11 +42,7 @@ function damageCreature(creature, amount) {
   return damage;
 }
 
-function localWater(point) {
-  // Return the shared environment in the common case; only zones need a new value.
-  if (!state.zones.length || !inEffectZone(point, "cleanse")) return state.env;
-  return { oxygen: Math.max(60, state.env.oxygen), toxicity: Math.min(20, state.env.toxicity) };
-}
+function localWater(point) { return waterAt(point); }
 
 function addPowerZone(type, x, y, radius) {
   const duration = toolDefs[type]?.duration;
@@ -170,9 +166,9 @@ function updateToolPreviewStatus() {
     text = id === "favor" ? powerCount(count, "nuevo individuo", "nuevos individuos") : powerCount(count, "nueva alga", "nuevas algas");
   } else {
     const targets = powerTargets(p.x, p.y, state.toolRadius);
-    const count = id === "feed" ? targets.filter(c => getSpecies(c)?.class !== "producer" && c.energy < 130).length
+    const count = id === "feed" ? targets.filter(c => getSpecies(c)?.class !== "producer" && c.energy < c.maxEnergy).length
       : id === "disaster" ? targets.filter(c => !isProtected(c)).length : targets.length;
-    text = id === "feed" ? powerCount(count, "animal con hambre", "animales con hambre")
+    text = id === "feed" ? powerCount(count, "animal por alimentar", "animales por alimentar")
       : id === "disaster" ? powerCount(count, "individuo vulnerable", "individuos vulnerables")
       : powerCount(count, "habitante en el área", "habitantes en el área");
   }
@@ -226,12 +222,12 @@ function applyTool(x, y) {
       : `Agua limpia: ${powerCount(affected, "habitante en el área", "habitantes en el área")} · 60 s de simulación.`;
   } else if (id === "feed") {
     for (const c of targets) {
-      if (getSpecies(c)?.class === "producer" || c.energy >= 130) continue;
-      c.energy = Math.min(130, c.energy + 45);
+      if (getSpecies(c)?.class === "producer" || c.energy >= c.maxEnergy) continue;
+      c.energy = Math.min(c.maxEnergy, c.energy + 45);
       affected++;
     }
-    message = affected ? `Alimento entregado a ${powerCount(affected, "animal", "animales")} (hasta +45 de energía, máximo 130).`
-      : "No hay animales con hambre en el área. Las plantas se alimentan de luz y nutrientes.";
+    message = affected ? `Alimento entregado a ${powerCount(affected, "animal", "animales")} (+45 como máximo, hasta llenar sus reservas).`
+      : "Los animales del área ya tienen sus reservas llenas, o no hay animales. Las plantas necesitan luz y nutrientes.";
     if (affected) addPowerMarker(id, x, y, radius);
   } else if (id === "disaster") {
     for (const c of targets) if (damageCreature(c, 60) > 0) affected++;

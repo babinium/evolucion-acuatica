@@ -395,7 +395,7 @@
           </section>
           <p id="toolHint" class="hint power-hint" role="status">Elegí un poder o usá las teclas 1–6. Podés intervenir también en pausa.</p>
         </div>
-        <details class="environment-settings"><summary><svg aria-hidden="true"><use href="#i-sliders"/></svg>Ambiente<span aria-hidden="true">⌄</span></summary><div id="envControls"></div></details>
+        <details class="environment-settings"><summary><svg aria-hidden="true"><use href="#i-sliders"/></svg>Ambiente<span aria-hidden="true">⌄</span></summary><p class="ecology-explainer">El aporte global se transforma por el consumo de cada zona. Inspeccioná un habitante para ver el agua donde vive.</p><div id="envControls"></div><div class="ecology-indicators"><span>Nutrientes disponibles<b id="nutrientStock">70 / 100</b></span><span>Mayor generación viva<b id="generationStat">1</b></span></div><p class="ecology-explainer">Luz + nutrientes → plantas → herbívoros → carnívoros. Los restos reciclan nutrientes; la vegetación ofrece cobertura para escapar o acechar.</p></details>
         <div class="performance-control">
           <label for="qualitySelect">Calidad visual</label>
           <select id="qualitySelect"><option value="eco">Bajo consumo</option><option value="balanced">Equilibrado</option><option value="quality">Más detalle</option></select>
@@ -599,6 +599,7 @@
     </main>
     <script src="spatial-grid.js">
     </script>
+    <script src="ecology.js"></script>
     <script src="powers.js"></script>
     <script src="app.js">
     </script>

@@ -9,7 +9,7 @@ const traitKeys = [
 const MAX_INITIAL_SPECIES_PER_TYPE = 4;
 const MAX_MANUAL_SPECIES_PER_WORLD = 4;
 const INITIAL_HERBIVORES_PER_SPECIES = 24;
-const INITIAL_CARNIVORES_PER_SPECIES = Math.max(1, Math.round(INITIAL_HERBIVORES_PER_SPECIES / 3));
+const INITIAL_CARNIVORES_PER_SPECIES = Math.max(1, Math.round(INITIAL_HERBIVORES_PER_SPECIES / 6));
 
 const traitLabels = {
   size: "Tamaño",
@@ -24,13 +24,13 @@ const traitLabels = {
 };
 
 const envDefs = {
-  temperature: ["Temperatura", 0, 100, 48, "Sube el metabolismo de animales y acelera la descomposicion de cadaveres; con alta temperatura gastan energia mas rapido."],
-  light: ["Luz", 0, 100, 68, "Aumenta la energia que ganan los productores por fotosintesis y mejora el crecimiento de alga base."],
-  oxygen: ["Oxígeno", 0, 100, 62, "Ayuda al crecimiento de alga base; si baja mucho, los individuos empiezan a perder salud."],
-  nutrients: ["Nutrientes", 0, 100, 70, "Aumenta la energia de los productores y favorece el crecimiento de alga base."],
-  toxicity: ["Toxicidad", 0, 100, 12, "Daña a los individuos cuando es muy alta y reduce el crecimiento/vida del alga base."],
-  currents: ["Corriente", 0, 100, 35, "Aumenta levemente la velocidad maxima de movimiento de los animales."],
-  algaeRate: ["Algas", 0, 100, 16, "Controla la probabilidad de aparicion de alga base por cuadrante del mapa."]
+  temperature: ["Temperatura", 0, 100, 48, "El frío ralentiza la actividad; el calor aumenta el gasto. Los extremos dañan la salud y reducen la fotosíntesis."],
+  light: ["Luz", 0, 100, 68, "Sin luz no hay fotosíntesis ni rebrote. Las plantas y algas necesitan también nutrientes disponibles."],
+  oxygen: ["Oxígeno", 0, 100, 62, "Nivel de oxígeno del agua entrante. La respiración lo consume y la fotosíntesis lo repone localmente; la escasez reduce actividad y daña."],
+  nutrients: ["Nutrientes", 0, 100, 70, "Aporte de nutrientes al mundo. Plantas y algas compiten por reservas locales finitas; los restos y desechos reciclan una parte."],
+  toxicity: ["Contaminación", 0, 100, 12, "Contaminación del agua: reduce el crecimiento y, por encima de 25, daña la salud. Las toxinas del cuerpo no dan inmunidad."],
+  currents: ["Corriente", 0, 100, 35, "Desplaza animales y cadáveres, mezcla nutrientes entre zonas y renueva el oxígeno. Los productores están anclados."],
+  algaeRate: ["Algas nuevas", 0, 100, 16, "Colonización de nuevas manchas de algas; requiere luz y nutrientes, que se descuentan de la zona. Cero detiene la colonización."]
 };
 
 const state = {
@@ -115,8 +115,10 @@ function rebuildSpatialIndexes() {
     for (const bucket of grid.cells.values()) bucket.length = 0;
   }
   quadrantCounts.clear();
+  if (state.habitats) for (const h of state.habitats) h.cover = 0;
   for (const c of state.creatures) {
     const type = getSpecies(c)?.class;
+    if (type === "producer" && c.health > 0 && state.habitats) state.habitats[cellIndex(c)].cover += c.size * 0.035;
     if (classGrids[type]) classGrids[type].insert(c);
     if (type && type !== "producer") animalGrid.insert(c);
     const key = quadrantKey(c.x, c.y, c.speciesId);
@@ -274,7 +276,7 @@ function normalizeSpecies(raw = {}) {
   }
   if (rawClass === "producer") {
     traits.attack = 0;
-    traits.speed = Math.min(traits.speed, 2);
+    traits.speed = 0;
   }
   if (rawClass === "herbivore") traits.attack = 0;
   return {
@@ -317,7 +319,7 @@ function fallbackSpecies(producers, herbivores, carnivores) {
   for (const [type, count] of [["producer", producers], ["herbivore", herbivores], ["carnivore", carnivores]]) {
     for (let i = 0; i < count; i++) {
       const base = type === "producer"
-        ? { size: rand(2, 7), speed: 0, attack: 0, defense: rand(1, 7), fertility: rand(10, 30), metabolism: rand(1, 5), foodEfficiency: rand(5, 9), toxicity: rand(0, 5) }
+        ? { size: rand(2, 7), speed: 0, attack: 0, defense: rand(4, 8), fertility: rand(10, 30), metabolism: rand(1, 5), foodEfficiency: rand(5, 9), toxicity: rand(0, 5) }
         : type === "herbivore"
           ? { size: rand(2, 7), speed: rand(3, 9), attack: 0, defense: rand(2, 8), fertility: rand(5, 20), metabolism: rand(2, 7), foodEfficiency: rand(3, 9), toxicity: rand(0, 4) }
           : { size: rand(3, 9), speed: rand(6, 10), attack: rand(4, 10), defense: rand(1, 7), fertility: rand(5, 20), metabolism: rand(4, 10), foodEfficiency: rand(2, 8), toxicity: rand(0, 3) };
@@ -325,7 +327,7 @@ function fallbackSpecies(producers, herbivores, carnivores) {
       for (const key of traitKeys) {
         const max = traitMax(key, type);
         const min = traitMin(key, type);
-        traits[key] = clamp(base[key] ?? (key === "fertility" ? rand(min, max) : rand(2, 8)), min, max);
+        traits[key] = clamp(base[key] ?? (key === "fertility" ? rand(min, max) : rand(type === "carnivore" ? 5 : 2, type === "carnivore" ? 9 : 8)), min, max);
       }
       result.push(normalizeSpecies({
         name: `${pick(blueprints[type])} ${i + 1}`,
@@ -376,6 +378,7 @@ function seedWorld(speciesList) {
   state.nextSpeciesId = state.species.length + 1;
   state.manualSpeciesCreated = 0;
   initEnvironment();
+  initHabitats();
 
   for (let i = 0; i < 90; i++) spawnResource(rand(0, state.worldSize), rand(0, state.worldSize), rand(35, 120));
   for (const sp of state.species) {
@@ -384,7 +387,7 @@ function seedWorld(speciesList) {
       : sp.class === "herbivore"
         ? INITIAL_HERBIVORES_PER_SPECIES
         : INITIAL_CARNIVORES_PER_SPECIES;
-    for (let i = 0; i < count; i++) spawnCreature(sp, rand(120, state.worldSize - 120), rand(120, state.worldSize - 120), 0);
+    for (let i = 0; i < count; i++) spawnCreature(sp, rand(120, state.worldSize - 120), rand(120, state.worldSize - 120), 0, initialGenes(sp));
   }
   rebuildSpatialIndexes();
   recalcSpecies();
@@ -417,35 +420,24 @@ function spawnResource(x, y, amount) {
   if (state.resources.length >= MAX_RESOURCES) return;
   x = clamp(x, 0, state.worldSize);
   y = clamp(y, 0, state.worldSize);
-  state.resources.push({ id: uid("alga"), name: "Alga base", x, y, amount, max: amount, radius: Math.sqrt(amount) * 2.3 });
+  state.resources.push({ id: uid("alga"), name: "Alga base", x, y, amount, max: amount, root: amount * 0.08, radius: Math.sqrt(amount) * 2.3 });
 }
 
-function spawnCreature(species, x, y, generation) {
+function spawnCreature(species, x, y, generation, genes = species.traits) {
   if (state.creatures.length >= MAX_CREATURES) return;
-  x = clamp(x, 8, state.worldSize - 8);
-  y = clamp(y, 8, state.worldSize - 8);
-  const t = species.traits;
-  const size = Math.max(3, 4 + t.size * 2.2);
-  state.creatures.push({
-    id: state.nextCreatureId++,
-    speciesId: species.id,
-    x, y,
-    vx: rand(-1, 1),
-    vy: rand(-1, 1),
-    size,
-    age: rand(0, 40),
-    health: 60 + t.size * 7 + t.defense * 4,
-    maxHealth: 60 + t.size * 7 + t.defense * 4,
-    energy: rand(45, 90),
-    generation: generation || species.generation,
-    state: "explorando",
-    targetId: null,
-    cooldown: rand(20, 120),
-    protected: 0,
-    wanderX: null,
-    wanderY: null,
-    wanderTime: 0
-  });
+  const c = {
+    id: state.nextCreatureId++, speciesId: species.id,
+    x: clamp(x, 8, state.worldSize - 8), y: clamp(y, 8, state.worldSize - 8),
+    vx: 0, vy: 0, genes: sanitizeGenes(genes, species.class),
+    age: rand(18, 40), generation: generation || species.generation,
+    state: "explorando", targetId: null, cooldown: rand(8, 25), protected: 0,
+    wanderX: null, wanderY: null, wanderTime: 0
+  };
+  const body = bodyOf(c, species);
+  Object.assign(c, {size: body.size, maxHealth: body.maxHealth, health: body.maxHealth,
+    maxEnergy: body.maxEnergy, energy: body.maxEnergy * rand(0.45, 0.7), tissue: body.tissue});
+  state.creatures.push(c);
+  return c;
 }
 
 async function startWorld(useAI, withImages = true) {
@@ -550,568 +542,6 @@ function updateCamera(dt) {
   state.camera.x = clamp(state.camera.x, 0, state.worldSize);
   state.camera.y = clamp(state.camera.y, 0, state.worldSize);
   if (keys.size) invalidate();
-}
-
-function updateEnvironment(dt) {
-  for (const key of Object.keys(state.env)) {
-    if (Math.random() < dt * 0.015 * state.chaos) {
-      const def = envDefs[key];
-      state.envTarget[key] = clamp(state.envTarget[key] + rand(-18, 18) * state.chaos, def[1], def[2]);
-    }
-    state.env[key] += (state.envTarget[key] - state.env[key]) * dt * 0.08;
-  }
-}
-
-function updateResources(dt) {
-  const growth = (state.env.light + state.env.nutrients + state.env.oxygen) / 300;
-  spawnAlgaeByQuadrant(dt, growth);
-  for (const r of state.resources) {
-    const water = localWater(r);
-    const localGrowth = water === state.env ? growth : (state.env.light + state.env.nutrients + water.oxygen) / 300;
-    r.amount = clamp(r.amount + dt * localGrowth * 2.2 - water.toxicity * dt * 0.01, 0, r.max * 1.6);
-    r.radius = Math.sqrt(Math.max(1, r.amount)) * 2.2;
-  }
-  state.resources = state.resources.filter((r) => r.amount > 2);
-}
-
-function spawnAlgaeByQuadrant(dt, growth) {
-  const quadrantsPerSide = 4;
-  const cellSize = state.worldSize / quadrantsPerSide;
-  const chance = dt * (state.env.algaeRate / 100);
-  for (let qx = 0; qx < quadrantsPerSide; qx++) {
-    for (let qy = 0; qy < quadrantsPerSide; qy++) {
-      if (Math.random() >= chance) continue;
-      const x = rand(qx * cellSize, (qx + 1) * cellSize);
-      const y = rand(qy * cellSize, (qy + 1) * cellSize);
-      spawnResource(x, y, rand(18, 55) * Math.max(0.35, growth));
-    }
-  }
-}
-
-function updateCorpses(dt) {
-  for (const corpse of state.corpses) {
-    corpse.amount -= dt * (0.45 + state.env.temperature * 0.01);
-    corpse.radius = Math.sqrt(Math.max(1, corpse.amount)) * 1.7;
-  }
-  state.corpses = state.corpses.filter((corpse) => corpse.amount > 3);
-}
-
-function updateZones(dt) {
-  for (const z of state.zones) {
-    if (z.ttl !== 9999) z.ttl -= dt;
-  }
-  state.zones = state.zones.filter((z) => z.ttl > 0);
-}
-
-function updateCreatures(dt) {
-  const newborns = [];
-  const livingClassCounts = countLivingClasses();
-  const maxCorpseRadius = state.corpses.reduce((max, corpse) => Math.max(max, corpse.radius), 0);
-  corpseGrid.maxRadius = maxCorpseRadius;
-  for (const c of state.creatures) {
-    const sp = getSpecies(c);
-    if (!sp || c.health <= 0 || c.energy <= -35) continue;
-    const oldX = c.x, oldY = c.y, oldSpeciesId = c.speciesId;
-    const t = sp.traits;
-    c.age += dt * 0.55;
-    c.cooldown = Math.max(0, c.cooldown - dt * 20);
-    c.protected = Math.max(0, c.protected - dt);
-    const classCost = sp.class === "herbivore" ? 0.68 : sp.class === "carnivore" ? 0.86 : 0.42;
-    const metabolism = (0.55 + t.metabolism * 0.13 + t.size * 0.055 + t.speed * 0.025) * classCost * dt;
-    c.energy -= metabolism * (0.7 + state.env.temperature / 120);
-    c.health += isProtected(c) ? dt * 2 : 0;
-    c.health = clamp(c.health, 0, c.maxHealth);
-
-    if (sp.class === "producer") producerThink(c, sp, dt);
-    else animalThink(c, sp, dt, livingClassCounts);
-
-    c.x = clamp(c.x + c.vx * dt * 58, 8, state.worldSize - 8);
-    c.y = clamp(c.y + c.vy * dt * 58, 8, state.worldSize - 8);
-
-    const energyRatio = clamp(c.energy / 120, 0, 1);
-    const canReproduce = state.creatures.length + newborns.length < MAX_CREATURES
-      && c.health > 0 && c.energy > 35
-      && c.cooldown <= 0
-      && !isCrowdedForReproduction(c, sp);
-    const populationBalance = reproductionPopulationBalance(sp, livingClassCounts);
-    const reproductionChance = dt * (0.009 + t.fertility * 0.0028) * energyRatio * populationBalance;
-    if (canReproduce && Math.random() < reproductionChance) {
-      c.energy *= 0.56;
-      c.cooldown = Math.max(28, 96 - t.fertility * 3.2);
-      newborns.push({ parent: c, species: maybeMutateSpecies(sp, c) });
-    }
-
-    if (c.energy < 0) c.health += c.energy * dt * 0.9;
-    const water = localWater(c);
-    if (water.oxygen < 18) damageCreature(c, dt * (18 - water.oxygen) * 0.18);
-    if (water.toxicity > 62) damageCreature(c, dt * (water.toxicity - 62) * 0.08);
-    if (c.age > 260 + t.size * 18) c.health -= dt * 3;
-    creatureGrid.move(c, oldX, oldY);
-    classGrids[sp.class]?.move(c, oldX, oldY);
-    if (sp.class !== "producer") animalGrid.move(c, oldX, oldY);
-    const oldKey = quadrantKey(oldX, oldY, oldSpeciesId);
-    const newKey = quadrantKey(c.x, c.y, c.speciesId);
-    if (oldKey !== newKey) {
-      quadrantCounts.set(oldKey, (quadrantCounts.get(oldKey) || 1) - 1);
-      quadrantCounts.set(newKey, (quadrantCounts.get(newKey) || 0) + 1);
-    }
-  }
-
-  for (const item of newborns) {
-    spawnCreature(item.species, item.parent.x + rand(-35, 35), item.parent.y + rand(-35, 35), item.parent.generation + 1);
-  }
-  const deaths = removeDeadCreatures();
-  if (deaths && Math.random() < 0.25) state.lastEvent = `${deaths} muertes recientes`;
-}
-
-function removeDeadCreatures() {
-  const deaths = [];
-  state.creatures = state.creatures.filter((c) => {
-    const alive = c.health > 0 && c.energy > -35;
-    if (!alive) deaths.push(c);
-    return alive;
-  });
-  for (const dead of deaths) {
-    const sp = getSpecies(dead);
-    if (sp && sp.class !== "producer" && state.corpses.length < MAX_CORPSES) {
-      state.corpses.push({
-        id: uid("corpse"),
-        x: dead.x,
-        y: dead.y,
-        amount: 22 + sp.traits.size * 9 + Math.max(0, dead.energy * 0.35),
-        radius: dead.size
-      });
-    }
-  }
-  return deaths.length;
-}
-
-function isCrowdedForReproduction(creature, species) {
-  if ((species.class === "herbivore" || species.class === "carnivore")
-    && sameSpeciesInQuadrant(creature) > 20) {
-    return true;
-  }
-  const radius = species.class === "producer"
-    ? 115 + species.traits.size * 8
-    : species.class === "herbivore"
-      ? 170 + species.traits.size * 10
-      : 230 + species.traits.size * 12;
-  const limit = species.class === "producer"
-    ? 7
-    : species.class === "herbivore"
-      ? 14
-      : 9;
-  let nearby = 0;
-  for (const other of creatureGrid.query(creature.x, creature.y, radius)) {
-    if (other.id === creature.id || other.speciesId !== creature.speciesId) continue;
-    if (Math.hypot(creature.x - other.x, creature.y - other.y) < radius) {
-      nearby++;
-      if (nearby >= limit) return true;
-    }
-  }
-  return false;
-}
-
-function sameSpeciesInQuadrant(creature) {
-  return quadrantCounts.get(quadrantKey(creature.x, creature.y, creature.speciesId)) || 0;
-}
-
-function countLivingClasses() {
-  const counts = { producer: 0, herbivore: 0, carnivore: 0 };
-  for (const creature of state.creatures) {
-    const sp = getSpecies(creature);
-    if (!sp) continue;
-    if (sp.class === "producer") counts.producer++;
-    if (sp.class === "herbivore") counts.herbivore++;
-    if (sp.class === "carnivore") counts.carnivore++;
-  }
-  return counts;
-}
-
-function reproductionPopulationBalance(species, classCounts) {
-  if (species.class === "carnivore") return carnivoreReproductionBalance(classCounts);
-  return 1;
-}
-
-function carnivoreReproductionBalance(classCounts) {
-  const herbivores = classCounts.herbivore;
-  const carnivores = classCounts.carnivore;
-  if (herbivores <= 0) return 0;
-  return clamp(1 - carnivores / (herbivores / 3), 0, 1);
-}
-
-function producerThink(c, sp, dt) {
-  c.state = "fotosintesis";
-  c.vx *= 0.88;
-  c.vy *= 0.88;
-  c.energy += dt * (state.env.light * 0.035 + state.env.nutrients * 0.025) * (sp.traits.foodEfficiency / 7);
-  c.energy = clamp(c.energy, 0, 120);
-}
-
-function animalThink(c, sp, dt, livingClassCounts) {
-  const t = sp.traits;
-  let nearestThreat = null;
-  let threatD = 99999;
-  if (sp.class === "herbivore" && !isProtected(c)) {
-    for (const other of classGrids.carnivore.query(c.x, c.y, 130 + t.perception * 18)) {
-      const osp = getSpecies(other);
-      if (!osp || osp.class !== "carnivore") continue;
-      const d = dist(c, other);
-      if (d < threatD && d < 130 + t.perception * 18) { nearestThreat = other; threatD = d; }
-    }
-  }
-  if (nearestThreat && Math.random() > t.defense / 13) {
-    c.state = "huyendo";
-    steerAway(c, nearestThreat, t.speed);
-    return;
-  }
-
-  if (sp.class === "herbivore") eatProducer(c, sp, dt, livingClassCounts);
-  if (sp.class === "carnivore") hunt(c, sp, dt);
-
-  if (sp.class !== "carnivore" || c.state !== "persiguiendo") {
-    c.vx *= 0.992;
-    c.vy *= 0.992;
-  }
-  if (Math.random() < dt * 0.55) {
-    c.vx += rand(-1, 1) * (0.35 + t.speed * 0.055);
-    c.vy += rand(-1, 1) * (0.35 + t.speed * 0.055);
-  }
-  const max = moveSpeedLimit(sp, c.state);
-  const len = Math.hypot(c.vx, c.vy) || 1;
-  if (len > max) { c.vx = (c.vx / len) * max; c.vy = (c.vy / len) * max; }
-}
-
-function eatProducer(c, sp, dt, classCounts) {
-  let best = null;
-  let bestD = 99999;
-  let bestType = null;
-  const searchRadius = foodVisionRadius(c, sp, 520, 135);
-  const preferAlgae = classCounts.herbivore > classCounts.producer;
-  const producerBias = preferAlgae ? 220 : -120;
-  const algaeBias = preferAlgae ? -150 : 160;
-  for (const other of classGrids.producer.query(c.x, c.y, searchRadius)) {
-    if (other.health <= 0 || other.energy <= -35 || isProtected(other)) continue;
-    const otherSp = getSpecies(other);
-    if (!otherSp || otherSp.class !== "producer") continue;
-    const d = Math.hypot(c.x - other.x, c.y - other.y);
-    const foodValue = other.energy + other.health * 0.35;
-    const score = d - foodValue * 0.08 + otherSp.traits.defense * 8 + otherSp.traits.toxicity * 12 + producerBias;
-    if (d < searchRadius && score < bestD) {
-      best = other;
-      bestD = score;
-      bestType = "producer";
-    }
-  }
-  for (const alga of resourceGrid.query(c.x, c.y, searchRadius)) {
-    if (alga.amount <= 0) continue;
-    const d = Math.hypot(c.x - alga.x, c.y - alga.y);
-    const score = d - alga.amount * 0.18 + algaeBias;
-    if (d < searchRadius && score < bestD) {
-      best = alga;
-      bestD = score;
-      bestType = "alga";
-    }
-  }
-  if (!best) {
-    c.state = "explorando por comida";
-    c.wanderTime -= dt;
-    const needsNewTarget = c.wanderTime <= 0
-      || c.wanderX === null
-      || Math.hypot(c.x - c.wanderX, c.y - c.wanderY) < 80;
-    if (needsNewTarget) {
-      const angle = rand(0, Math.PI * 2);
-      const distance = rand(420, 900) + sp.traits.perception * 35;
-      c.wanderX = clamp(c.x + Math.cos(angle) * distance, 40, state.worldSize - 40);
-      c.wanderY = clamp(c.y + Math.sin(angle) * distance, 40, state.worldSize - 40);
-      c.wanderTime = rand(3.5, 7.5);
-    }
-    steerToward(c, { x: c.wanderX, y: c.wanderY }, sp.traits.speed + 1.5);
-    return;
-  }
-  c.wanderTime = 0;
-  const distanceToFood = Math.hypot(c.x - best.x, c.y - best.y);
-  if (bestType === "alga") {
-    if (distanceToFood < c.size + best.radius + 12) {
-      const amount = Math.min(best.amount, dt * (4.2 + sp.traits.foodEfficiency * 1.15));
-      best.amount -= amount;
-      c.energy = clamp(c.energy + amount * 0.68, 0, 130);
-      c.health = clamp(c.health + dt * 0.7, 0, c.maxHealth);
-      c.state = "comiendo alga base";
-      c.vx *= 0.72;
-      c.vy *= 0.72;
-    } else {
-      c.state = "buscando alga base";
-      steerToward(c, best, sp.traits.speed + 2);
-    }
-    return;
-  }
-  const producerSp = getSpecies(best);
-  if (distanceToFood < c.size + best.size + 12) {
-    const bite = dt * (4.6 + sp.traits.foodEfficiency * 1.25);
-    const defenseCost = producerSp.traits.defense * 0.16 + producerSp.traits.toxicity * 0.28;
-    best.energy -= bite * 0.32;
-    damageCreature(best, Math.max(0.6, bite - defenseCost));
-    c.energy = clamp(c.energy + Math.max(0.4, bite * (0.76 - producerSp.traits.toxicity * 0.025)), 0, 130);
-    if (producerSp.traits.toxicity > 0) damageCreature(c, dt * producerSp.traits.toxicity * 0.18);
-    c.health = clamp(c.health + dt * 1.2, 0, c.maxHealth);
-    c.state = "comiendo";
-    c.vx *= 0.72;
-    c.vy *= 0.72;
-  } else {
-    c.state = "buscando plantas";
-    steerToward(c, best, sp.traits.speed + 2);
-  }
-}
-
-function hunt(c, sp, dt) {
-  if (c.energy > 78) {
-    c.state = "descansando";
-    c.vx *= 0.94;
-    c.vy *= 0.94;
-    return;
-  }
-
-  const hunger = clamp((92 - c.energy) / 92, 0, 1);
-  if (eatNearbyCorpse(c, sp, dt)) return;
-
-  let prey = null;
-  let backupPrey = null;
-  let bestScore = -99999;
-  let bestBackupScore = -99999;
-  const huntRadius = foodVisionRadius(c, sp, 360 + hunger * 340, 58 + hunger * 28);
-  for (const other of animalGrid.query(c.x, c.y, huntRadius)) {
-    if (other.health <= 0 || other.energy <= -35 || isProtected(other)) continue;
-    if (other.id === c.id) continue;
-    const osp = getSpecies(other);
-    if (!osp || osp.class === "producer") continue;
-    if (other.speciesId === c.speciesId) continue;
-    const d = dist(c, other);
-    if (d > huntRadius) continue;
-    const weakness = (other.maxHealth - other.health) * 0.18 + (100 - other.energy) * 0.08;
-    const sizeRisk = Math.max(0, osp.traits.size - sp.traits.size) * 6;
-    const score = (osp.class === "herbivore" ? 28 : 8)
-      + weakness
-      + other.energy * 0.32
-      - d * (0.1 + hunger * 0.08)
-      - osp.traits.defense * 4.2
-      - osp.traits.toxicity * 6
-      - sizeRisk;
-    if (osp.class === "herbivore") {
-      if (score > bestScore) { bestScore = score; prey = other; }
-    } else if (score > bestBackupScore) {
-      bestBackupScore = score;
-      backupPrey = other;
-    }
-  }
-  prey = prey || backupPrey;
-  if (!prey && eatCorpse(c, sp, dt, hunger)) return;
-  if (!prey) {
-    patrolForFood(c, sp, dt, hunger);
-    return;
-  }
-  if (dist(c, prey) < c.size + prey.size + 4) {
-    const preySp = getSpecies(prey);
-    const attack = sp.traits.attack + sp.traits.speed * 0.5 + sp.traits.size * 0.25 + rand(-3, 3);
-    const defense = preySp.traits.defense + preySp.traits.speed * 0.35 + preySp.traits.toxicity * 0.25 + rand(-3, 3);
-    if (attack > defense) {
-      damageCreature(prey, dt * (20 + sp.traits.attack * 5.5));
-      c.energy = clamp(c.energy + dt * (5 + sp.traits.foodEfficiency * 0.8), 0, 130);
-      c.state = "cazando";
-      if (prey.health <= 0) {
-        const meal = 26 + preySp.traits.size * 8 + Math.max(0, prey.energy * 0.45);
-        c.energy = clamp(c.energy + meal, 0, 140);
-        state.lastEvent = `${sp.name} cazo a ${preySp.name}`;
-      }
-    } else {
-      damageCreature(c, dt * (preySp.traits.defense * 0.38 + preySp.traits.toxicity * 0.62));
-      c.energy -= dt * 2.2;
-      prey.energy -= dt * 2;
-      c.state = "fallo caza";
-    }
-  } else {
-    c.state = "persiguiendo";
-    const preySp = getSpecies(prey);
-    const speedAdvantage = Math.max(0, sp.traits.speed - (preySp?.traits.speed || 0));
-    steerToward(c, prey, sp.traits.speed + 3 + hunger * 2.4 + speedAdvantage * 1.2);
-  }
-}
-
-function eatNearbyCorpse(c, sp, dt) {
-  let best = null;
-  let bestD = 99999;
-  for (const corpse of corpseGrid.query(c.x, c.y, c.size + (corpseGrid.maxRadius || 180) + 18)) {
-    if (corpse.amount <= 0) continue;
-    const d = Math.hypot(c.x - corpse.x, c.y - corpse.y);
-    if (d < bestD && d < c.size + corpse.radius + 18) {
-      best = corpse;
-      bestD = d;
-    }
-  }
-  if (!best) return false;
-  eatCorpseBite(c, sp, best, dt);
-  return true;
-}
-
-function eatCorpse(c, sp, dt, hunger = 0) {
-  let best = null;
-  let bestScore = 99999;
-  const corpseRadius = foodVisionRadius(c, sp, 520 + hunger * 520, 72 + hunger * 38);
-  for (const corpse of corpseGrid.query(c.x, c.y, corpseRadius)) {
-    if (corpse.amount <= 0) continue;
-    const d = Math.hypot(c.x - corpse.x, c.y - corpse.y);
-    const score = d - corpse.amount * (0.45 + hunger * 0.35);
-    if (score < bestScore && d < corpseRadius) {
-      best = corpse;
-      bestScore = score;
-    }
-  }
-  if (!best) return false;
-  const bestD = Math.hypot(c.x - best.x, c.y - best.y);
-  if (bestD < c.size + best.radius + 8) {
-    eatCorpseBite(c, sp, best, dt);
-  } else {
-    steerToward(c, best, sp.traits.speed + 2 + hunger * 2.5);
-    c.state = "buscando carrona";
-  }
-  return true;
-}
-
-function eatCorpseBite(c, sp, corpse, dt) {
-  const bite = Math.min(corpse.amount, dt * (8 + sp.traits.foodEfficiency * 1.55));
-  corpse.amount -= bite;
-  c.energy = clamp(c.energy + bite * 1.05, 0, 130);
-  c.health = clamp(c.health + dt * 0.65, 0, c.maxHealth);
-  c.state = "carroneando";
-  c.vx *= 0.7;
-  c.vy *= 0.7;
-}
-
-function patrolForFood(c, sp, dt, hunger) {
-  c.state = hunger > 0.55 ? "rastreando comida" : "patrullando";
-  c.wanderTime -= dt * (1 + hunger);
-  const needsNewTarget = c.wanderTime <= 0
-    || c.wanderX === null
-    || Math.hypot(c.x - c.wanderX, c.y - c.wanderY) < 90;
-  if (needsNewTarget) {
-    const target = nearestFoodScent(c, sp);
-    if (target) {
-      c.wanderX = target.x;
-      c.wanderY = target.y;
-      c.wanderTime = rand(2.5, 5.5);
-    } else {
-      const angle = rand(0, Math.PI * 2);
-      const distance = rand(620, 1300) + sp.traits.perception * 55 + hunger * 520;
-      c.wanderX = clamp(c.x + Math.cos(angle) * distance, 40, state.worldSize - 40);
-      c.wanderY = clamp(c.y + Math.sin(angle) * distance, 40, state.worldSize - 40);
-      c.wanderTime = rand(3.5, 7.0);
-    }
-  }
-  steerToward(c, { x: c.wanderX, y: c.wanderY }, sp.traits.speed + 1.8 + hunger * 2.2);
-}
-
-function nearestFoodScent(c, sp) {
-  let best = null;
-  let bestScore = 99999;
-  const scentRadius = 900 + sp.traits.perception * 95;
-  for (const corpse of corpseGrid.query(c.x, c.y, scentRadius)) {
-    const d = Math.hypot(c.x - corpse.x, c.y - corpse.y);
-    const score = d - corpse.amount * 0.7;
-    if (d < scentRadius && score < bestScore) {
-      best = corpse;
-      bestScore = score;
-    }
-  }
-  for (const other of animalGrid.query(c.x, c.y, scentRadius)) {
-    if (other.id === c.id || other.speciesId === c.speciesId || isProtected(other)) continue;
-    const osp = getSpecies(other);
-    if (!osp || osp.class === "producer") continue;
-    const d = dist(c, other);
-    const score = d - (osp.class === "herbivore" ? 160 : 40) - Math.max(0, 90 - other.energy);
-    if (d < scentRadius && score < bestScore) {
-      best = other;
-      bestScore = score;
-    }
-  }
-  return best;
-}
-
-function foodVisionRadius(creature, species, base, perPerception) {
-  const normal = base + species.traits.perception * perPerception;
-  if (creature.energy >= 0) return normal;
-  const desperation = Math.min(3.2, 1 + Math.abs(creature.energy) * 0.065);
-  return normal * desperation;
-}
-
-function steerToward(c, target, speed) {
-  const dx = target.x - c.x;
-  const dy = target.y - c.y;
-  const len = Math.hypot(dx, dy) || 1;
-  c.vx += (dx / len) * (0.07 + speed * 0.032);
-  c.vy += (dy / len) * (0.07 + speed * 0.032);
-}
-
-function steerAway(c, target, speed) {
-  const dx = c.x - target.x;
-  const dy = c.y - target.y;
-  const len = Math.hypot(dx, dy) || 1;
-  c.vx += (dx / len) * (0.11 + speed * 0.022);
-  c.vy += (dy / len) * (0.11 + speed * 0.022);
-}
-
-function moveSpeedLimit(species, actionState) {
-  const t = species.traits;
-  const classBonus = species.class === "carnivore" ? 0.18 : species.class === "herbivore" ? 0.02 : -0.08;
-  const chaseBonus = species.class === "carnivore" && actionState === "persiguiendo" ? 0.34 : 0;
-  return 0.24 + t.speed * 0.245 + classBonus + chaseBonus + state.env.currents * 0.002;
-}
-
-function maybeMutateSpecies(sp, parent) {
-  if (Math.random() > state.mutationRate * 0.015) return sp;
-  const traits = { ...sp.traits };
-  let drift = 0;
-  for (const key of traitKeys) {
-    const delta = rand(-1.6, 1.6) * state.mutationRate * 5;
-    const max = traitMax(key, sp.class);
-    const min = traitMin(key, sp.class);
-    traits[key] = clamp(traits[key] + delta, key === "attack" && sp.class !== "carnivore" ? 0 : min, max);
-    drift += Math.abs(delta);
-  }
-  if (sp.class !== "carnivore") traits.attack = 0;
-  if (drift < 4.6 || state.species.length > 36) return sp;
-  const child = normalizeSpecies({
-    ...sp,
-    id: uid("sp"),
-    parentId: sp.id,
-    name: `${sp.name} var. ${state.nextSpeciesId++}`,
-    description: `Rama evolucionada de ${sp.name}, surgida por mutaciones y presion ambiental.`,
-    traits,
-    generation: sp.generation + 1,
-    portraitUrl: sp.portraitUrl,
-    spriteUrl: sp.spriteUrl,
-    color: colorFor(sp.class, traits)
-  });
-  state.species.push(child);
-  speciesById.set(child.id, child);
-  state.lastEvent = `Nueva especie: ${child.name}`;
-  parent.speciesId = child.id;
-  state.selected = parent;
-  setTimeout(updateSelection, 0);
-  return child;
-}
-
-function recalcSpecies() {
-  const counts = new Map();
-  for (const c of state.creatures) counts.set(c.speciesId, (counts.get(c.speciesId) || 0) + 1);
-  for (const sp of state.species) {
-    const old = sp.population || 0;
-    sp.population = counts.get(sp.id) || 0;
-    if (old > 0 && sp.population === 0 && !sp.extinct) {
-      sp.extinct = true;
-      state.extinct++;
-      state.lastEvent = `Extincion: ${sp.name}`;
-    }
-  }
 }
 
 function render() {
@@ -1511,13 +941,16 @@ function updateSelection() {
       ${image}
       <div class="selection-heading"><span class="selection-avatar" style="color:${escapeHtml(sp.color)}"><svg><use href="#${sp.class === "producer" ? "i-leaf" : "i-fish"}"/></svg></span><div><span class="species-chip">${className(sp.class)} · Individuo #${c.id}</span><h2>${escapeHtml(sp.name)}</h2></div></div>
       <p class="hint">${escapeHtml(sp.description)}</p>
-      <div class="detail-grid">${["Estado", "Generación", "Edad", "Energía", "Salud", "Población"].map((label, i) => `<div class="detail"><span>${label}</span><b data-selection="${i}"></b></div>`).join("")}</div>
+      <div class="detail-grid">${["Estado", "Generación", "Edad", "Energía", "Salud", "Población", "Oxígeno local", "Nutrientes locales", "Cobertura vegetal", "Gasto basal"].map((label, i) => `<div class="detail"><span>${label}</span><b data-selection="${i}"></b></div>`).join("")}</div>
       <p class="hint"><b>Dieta:</b> ${escapeHtml(sp.diet)}</p>
       <p class="hint"><b>Hábitat:</b> ${escapeHtml(sp.habitat)}</p>
-      <div class="trait-list">${traitKeys.map(k => traitBar(k, sp.traits[k])).join("")}</div>`;
+      <p class="hint inherited-hint">Rasgos de este individuo · heredados con variaciones. Pasá el cursor para ver ventajas y costos.</p>
+      <div class="trait-list">${traitKeys.map(k => traitBar(k, c.genes[k], sp.class)).join("")}</div>`;
     selectionKey = key;
   }
-  const values = [c.state, c.generation, Math.floor(c.age), Math.floor(c.energy), `${Math.floor(c.health)} / ${Math.floor(c.maxHealth)}`, sp.population];
+  const water = localWater(c);
+  const cover = state.habitats[cellIndex(c)].cover || 0;
+  const values = [c.state, c.generation, Math.floor(c.age), `${Math.floor(c.energy)} / ${Math.floor(c.maxEnergy)}`, `${Math.floor(c.health)} / ${Math.floor(c.maxHealth)}`, sp.population, Math.round(water.oxygen), Math.round(water.nutrients), `${Math.round(cover / (cover + 2) * 100)}%`, `${(bodyOf(c).basal * water.temperatureActivity).toFixed(1)} / s`];
   panel.querySelectorAll("[data-selection]").forEach((el, i) => {
     const value = String(values[i]);
     if (el.textContent !== value) el.textContent = value;
@@ -1540,22 +973,20 @@ function detail(label, value) {
   return `<div class="detail"><span>${label}</span><b>${value}</b></div>`;
 }
 
-function traitBar(key, value) {
-  const max = key === "fertility" ? 30 : 10;
-  return `<div class="trait-bar"><span>${traitLabels[key]}</span><div class="bar"><i style="width:${(value / max) * 100}%"></i></div><b>${Math.round(value)}</b></div>`;
+function traitBar(key, value, type = "herbivore") {
+  const max = traitMax(key, type);
+  if (!max) return "";
+  return `<div class="trait-bar" tabindex="0" title="${escapeHtml(traitHelp[key])}" aria-label="${traitLabels[key]}: ${value.toFixed(1)}. ${escapeHtml(traitHelp[key])}"><span>${traitLabels[key]}</span><div class="bar"><i style="width:${(value / max) * 100}%"></i></div><b>${value.toFixed(1)}</b></div>`;
 }
 
 function traitMax(key, speciesClass = "herbivore") {
-  if (key === "speed" && speciesClass === "producer") return 2;
+  if (key === "speed" && speciesClass === "producer") return 0;
+  if (key === "attack" && speciesClass !== "carnivore") return 0;
   if (key !== "fertility") return 10;
   return speciesClass === "producer" ? 30 : 20;
 }
 
-function traitMin(key, speciesClass = "herbivore") {
-  if (key === "speed" && speciesClass === "carnivore") return 6;
-  if (key !== "fertility") return 0;
-  return speciesClass === "producer" ? 10 : 5;
-}
+function traitMin() { return 0; }
 
 function className(type) {
   return type === "producer" ? "Productor" : type === "herbivore" ? "Herbívoro" : "Carnívoro";
@@ -1577,11 +1008,17 @@ function buildEnvControls() {
     const key = input.dataset.env;
     state.env[key] = Number(input.value);
     state.envTarget[key] = Number(input.value);
+    refreshWater(); updateSelection(); invalidate();
     input.nextElementSibling.textContent = Math.round(state.env[key]);
   });
 }
 
 function syncEnvControls() {
+  const stock = state.habitats?.reduce((sum, h) => sum + h.stock, 0) / 16 || 0;
+  setText("nutrientStock", `${Math.round(stock * (state.env.nutrients || 0))} / 100`);
+  let maxGeneration = 1;
+  for (const c of state.creatures) maxGeneration = Math.max(maxGeneration, c.generation);
+  setText("generationStat", maxGeneration);
   for (const input of document.querySelectorAll("input[data-env]")) {
     const key = input.dataset.env;
     if (document.activeElement === input) continue;
@@ -1740,6 +1177,7 @@ function loadWorld() {
       throw new Error("La partida contiene datos incompletos o inválidos.");
     }
     const selectedId = saved.selectedId ?? saved.selected?.id;
+    const legacy = saved.ecologyVersion !== ECOLOGY_VERSION;
     Object.assign(state, saved, { started: true, activeTool: null });
     state.creatures = state.creatures.slice(0, MAX_CREATURES);
     state.resources = state.resources.slice(0, MAX_RESOURCES);
@@ -1750,7 +1188,7 @@ function loadWorld() {
     state.selected = state.creatures.find(c => c.id === selectedId) || null;
     state.nextCreatureId = Math.max(state.nextCreatureId || 1, ...state.creatures.map(c => c.id + 1));
     spriteCache.clear(); proceduralSprites.clear(); selectionKey = null; speciesListSignature = "";
-    rebuildSpeciesIndex(); rebuildSpatialIndexes(); recalcSpecies();
+    rebuildSpeciesIndex(); migrateEcology(legacy); rebuildSpatialIndexes(); recalcSpecies();
     simulationAccumulator = 0;
     document.getElementById("setup").classList.add("hidden");
     document.getElementById("app").classList.add("playing");
@@ -1794,11 +1232,13 @@ function buildManualTraits() {
   const speciesClass = document.getElementById("manualClass")?.value || "herbivore";
   const defaults = { size: 5, speed: speciesClass === "producer" ? 0 : speciesClass === "carnivore" ? 8 : 6, attack: speciesClass === "carnivore" ? 5 : 0, defense: 4, perception: 6, fertility: speciesClass === "producer" ? 18 : 10, metabolism: 6, foodEfficiency: 5, toxicity: 1 };
   for (const key of traitKeys) {
+    if (traitMax(key, speciesClass) === 0) continue;
     const label = document.createElement("label");
     label.textContent = traitLabels[key];
+    label.title = traitHelp[key];
     const max = traitMax(key, speciesClass);
     const min = traitMin(key, speciesClass);
-    label.innerHTML += `<input type="number" min="${min}" max="${max}" value="${defaults[key]}" data-trait="${key}" ${key === "attack" && speciesClass !== "carnivore" ? "disabled" : ""}>`;
+    label.innerHTML += `<input type="number" min="${min}" max="${max}" value="${defaults[key]}" data-trait="${key}" ${max === 0 ? "disabled" : ""}>`;
     box.appendChild(label);
   }
 }
