@@ -1,0 +1,147 @@
+[
+  {
+    "name": "low-defense-colony",
+    "species": [
+      {
+        "name": "producer 1",
+        "class": "producer",
+        "traits": {
+          "size": 3,
+          "speed": 0,
+          "attack": 0,
+          "defense": 2,
+          "perception": 4,
+          "fertility": 25,
+          "metabolism": 4,
+          "foodEfficiency": 8,
+          "toxicity": 0
+        }
+      },
+      {
+        "name": "herbivore 2",
+        "class": "herbivore",
+        "traits": {
+          "size": 6,
+          "speed": 5,
+          "attack": 2,
+          "defense": 7,
+          "perception": 6,
+          "fertility": 12,
+          "metabolism": 6,
+          "foodEfficiency": 8,
+          "toxicity": 0
+        }
+      },
+      {
+        "name": "carnivore 3",
+        "class": "carnivore",
+        "traits": {
+          "size": 9,
+          "speed": 8,
+          "attack": 7,
+          "defense": 4,
+          "perception": 8,
+          "fertility": 10,
+          "metabolism": 8,
+          "foodEfficiency": 6,
+          "toxicity": 0
+        }
+      },
+      {
+        "name": "carnivore 4",
+        "class": "carnivore",
+        "traits": {
+          "size": 8,
+          "speed": 7,
+          "attack": 6,
+          "defense": 6,
+          "perception": 9,
+          "fertility": 15,
+          "metabolism": 7,
+          "foodEfficiency": 7,
+          "toxicity": 5
+        }
+      }
+    ]
+  },
+  {
+    "name": "two-grazers-two-hunters",
+    "species": [
+      {
+        "name": "producer 1",
+        "class": "producer",
+        "traits": {
+          "size": 2,
+          "speed": 0,
+          "attack": 0,
+          "defense": 2,
+          "perception": 4,
+          "fertility": 20,
+          "metabolism": 4,
+          "foodEfficiency": 8,
+          "toxicity": 1
+        }
+      },
+      {
+        "name": "herbivore 2",
+        "class": "herbivore",
+        "traits": {
+          "size": 6,
+          "speed": 4,
+          "attack": 2,
+          "defense": 7,
+          "perception": 6,
+          "fertility": 12,
+          "metabolism": 5,
+          "foodEfficiency": 7,
+          "toxicity": 2
+        }
+      },
+      {
+        "name": "herbivore 3",
+        "class": "herbivore",
+        "traits": {
+          "size": 3,
+          "speed": 7,
+          "attack": 0,
+          "defense": 3,
+          "perception": 8,
+          "fertility": 15,
+          "metabolism": 6,
+          "foodEfficiency": 9,
+          "toxicity": 0
+        }
+      },
+      {
+        "name": "carnivore 4",
+        "class": "carnivore",
+        "traits": {
+          "size": 9,
+          "speed": 8,
+          "attack": 7,
+          "defense": 5,
+          "perception": 9,
+          "fertility": 8,
+          "metabolism": 7,
+          "foodEfficiency": 6,
+          "toxicity": 3
+        }
+      },
+      {
+        "name": "carnivore 5",
+        "class": "carnivore",
+        "traits": {
+          "size": 4,
+          "speed": 9,
+          "attack": 4,
+          "defense": 4,
+          "perception": 7,
+          "fertility": 10,
+          "metabolism": 8,
+          "foodEfficiency": 5,
+          "toxicity": 2
+        }
+      }
+    ]
+  }
+]
