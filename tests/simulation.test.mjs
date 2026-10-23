@@ -125,3 +125,15 @@ test('keyboard movement works after focusing the pause button', () => {
   game.run('update(1/30)');
   assert.ok(game.run('state.camera.x') > before);
 });
+
+test('changing nutrients updates local water and its indicator immediately in pause', () => {
+  const game=createGame();
+  game.run('seedWorld(fallbackSpecies(1,1,1));state.paused=true');
+  const input={dataset:{env:'nutrients'},value:'0',nextElementSibling:{textContent:''}};
+  game.listeners.get('envControls:input')({target:{closest:()=>input}});
+  assert.equal(game.element('nutrientStock').textContent,'0 / 100');
+  assert.equal(game.run('localWater(state.creatures[0]).nutrients'),0);
+  input.value='70';
+  game.listeners.get('envControls:input')({target:{closest:()=>input}});
+  assert.equal(game.element('nutrientStock').textContent,'70 / 100');
+});

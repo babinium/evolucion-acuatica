@@ -1008,14 +1008,18 @@ function buildEnvControls() {
     const key = input.dataset.env;
     state.env[key] = Number(input.value);
     state.envTarget[key] = Number(input.value);
-    refreshWater(); updateSelection(); invalidate();
+    refreshWater(); syncNutrientStock(); updateSelection(); invalidate();
     input.nextElementSibling.textContent = Math.round(state.env[key]);
   });
 }
 
-function syncEnvControls() {
+function syncNutrientStock() {
   const stock = state.habitats?.reduce((sum, h) => sum + h.stock, 0) / 16 || 0;
   setText("nutrientStock", `${Math.round(stock * (state.env.nutrients || 0))} / 100`);
+}
+
+function syncEnvControls() {
+  syncNutrientStock();
   let maxGeneration = 1;
   for (const c of state.creatures) maxGeneration = Math.max(maxGeneration, c.generation);
   setText("generationStat", maxGeneration);
