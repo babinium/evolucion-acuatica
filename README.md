@@ -2,13 +2,15 @@
 
 Un simulador de evolución con vista de dios: productores, herbívoros, depredadores, mutaciones e intervenciones. HTML, CSS y JavaScript con canvas, sin dependencias ni compilación.
 
+**Versión estable: [1.0.0](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.0.0).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
+
 ## Jugar
 
 ```sh
 python3 server.py
 ```
 
-Abrí [el juego local](http://127.0.0.1:5173) y elegí **Crear mi ecosistema**. No necesitás claves, conexión con proveedores de IA ni instalar paquetes. También funciona como sitio estático; la [demo pública](https://babinium.github.io/evolucion-acuatica/) muestra la versión publicada en `main`.
+Abrí [el juego local](http://127.0.0.1:5173) y elegí **Crear mi ecosistema**. No necesitás claves, conexión con proveedores de IA ni instalar paquetes. También funciona como sitio estático; la [versión pública](https://babinium.github.io/evolucion-acuatica/) muestra la versión publicada en `main`.
 
 Como alternativa podés usar Node.js 20 o posterior: `node server.js` o `npm run start:node`. `npm start` inicia el servidor Python.
 
@@ -30,6 +32,7 @@ Para una partida liviana, empezá con un mundo compacto o mediano y una especie 
 - Arrastrar o WASD/flechas: mover la cámara, incluso en pausa.
 - Rueda y botones −/+: acercar o alejar. El botón de mira centra el mundo.
 - Clic en un individuo o en la lista de especies: inspeccionar rasgos y población.
+- Clic en el retrato de la ficha: ampliar la ilustración a tres veces su tamaño, ajustada al espacio disponible y sin consumir API. Clic en cualquier lugar o Escape: cerrar la ampliación.
 - Barra espaciadora: pausar o reanudar. Los controles de velocidad no cambian la velocidad de la cámara.
 - Ambiente y Especies: mostrar u ocultar paneles en pantallas pequeñas.
 - Intervenciones: teclas 1–6 o botones del panel; clic en el agua para aplicar. Rueda para ajustar el área, Mayús + rueda para zoom y Escape o clic derecho para cancelar.
@@ -136,7 +139,7 @@ En **Crear con inteligencia artificial**, **Comprobar conexión** consulta la au
 ### Consumo de API y protección de claves
 
 - Cada acción envía **como máximo una solicitud de generación por respuesta que falta**. No hay reenvíos automáticos ante errores, cortes o esperas agotadas. OpenRouter recibe un modelo explícito, prioridad de precio y `allow_fallbacks: false`; no se usan routers automáticos ni herramientas auxiliares. El jugador decide si vuelve a intentar. La falta de saldo también detiene las imágenes restantes del mundo.
-- Texto: instrucciones compactas, solo los campos utilizados, una respuesta JSON y un límite de `256 + 320 × número de especies` tokens de salida (máximo 4.096). El modelo predeterminado de OpenRouter no usa pensamiento adicional. Google directo pide pensamiento mínimo a Flash-Lite compatible; no significa necesariamente cero.
+- Texto: instrucciones compactas, solo los campos utilizados, una respuesta JSON y un límite de `256 + 320 × número de especies` tokens de salida (máximo 4.096). OpenRouter recibe un esquema estricto con un campo obligatorio por cada especie y dieta pedidas; el servidor valida los datos antes de solicitar imágenes. El modelo predeterminado de OpenRouter no usa pensamiento adicional. Google directo pide pensamiento mínimo a Flash-Lite compatible; no significa necesariamente cero.
 - Imágenes: una ilustración y sin búsquedas ni herramientas. OpenRouter usa la API dedicada de imágenes, `n: 1` y 1K con Qwen; permite configurar 512, 768 o 1K si el modelo elegido lo admite. Google directo usa 512 px y un techo de 4.096 tokens de salida. Para cuidar memoria no se admiten 2K ni 4K. El mapa siempre reutiliza la versión reducida a 192 px.
 - La carpeta local `.ai-cache/` conserva respuestas e imágenes válidas entre reinicios; Python y Node pueden reutilizarlas al cambiar de servidor. Se distinguen modelo, instrucciones y ajustes; los cambios relevantes producen otra entrada. Peticiones simultáneas idénticas al mismo servidor comparten una generación. La caché no contiene claves ni cabeceras y tiene un límite de 128 respuestas y 64 MiB; al llenarse elimina las menos recientes. Las imágenes preparadas que ya estén en una partida siguen allí.
 - Simular, evolucionar, usar poderes, reiniciar y cargar una partida no generan contenido ni consumen saldo de los proveedores. El recorte y las fichas se calculan localmente.
