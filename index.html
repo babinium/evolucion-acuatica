@@ -9,7 +9,7 @@
       Evolución acuática · Un mundo que cambia
     </title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%230b1d28'/%3E%3Cpath d='M9 22Q20 7 31 21Q20 33 9 22M9 22L4 15V28Z' fill='%2381dfc0'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="styles.css?v=1.6.0" />
+    <link rel="stylesheet" href="styles.css?v=1.7.0" />
   </head>
   <body>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -39,6 +39,7 @@
       </symbol>
       <symbol id="i-food" viewBox="0 0 24 24"><path d="M5 4v7m3-7v7m-6-7v7c0 2 6 2 6 0M5 13v8m13-17c-5 3-5 9 0 10V4Zm0 10v7"/></symbol>
       <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3C9 7 5 11 5 15a7 7 0 0 0 14 0c0-4-4-8-7-12Z"/><path d="m9 15 2 2 4-4"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 5C8 2 4 3 2 4v15c3-2 7-1 10 1 3-2 7-3 10-1V4c-2-1-6-2-10 1Zm0 0v15M5 8h4m-4 4h4m6-4h4m-4 4h4"/></symbol>
     </svg>
     <main id="app">
       <canvas id="world" aria-label="Ecosistema acuático. Arrastrá para explorar y hacé clic en un individuo para inspeccionarlo.">
@@ -142,6 +143,14 @@
             <p class="section-description">
               Elegí sus primeros habitantes. La evolución hace el resto.
             </p>
+            <button id="setupBook" class="book-entry" aria-haspopup="dialog">
+              <svg aria-hidden="true"><use href="#i-book"/></svg>
+              <span><b>Libro de Darwin</b><small id="setupBookCount">Explorá la colección de especies</small></span>
+              <span aria-hidden="true">↗</span>
+            </button>
+            <label class="setup-species-source">Primeros habitantes
+              <select id="setupSpeciesSource"><option value="book">Del Libro de Darwin · con ilustraciones</option><option value="local">Especies locales nuevas · dibujos simples</option></select>
+            </label>
             <div class="setup-grid population-inputs">
               <label>
                 <span class="class-label producer">
@@ -323,7 +332,7 @@
           </span>
         </div>
         <div class="playback">
-          <span class="game-version" title="Reglas para todos los mundos nuevos">v1.6.0</span>
+          <span class="game-version" title="Reglas para todos los mundos nuevos">v1.7.0</span>
           <span class="live-state">
             <i>
             </i>
@@ -360,6 +369,7 @@
               Crear especie
             </span>
           </button>
+          <button id="bookBtn" class="book-topbar" aria-label="Abrir Libro de Darwin" aria-haspopup="dialog" title="Libro de Darwin"><svg aria-hidden="true"><use href="#i-book"/></svg><span>Libro de Darwin</span></button>
           <details id="worldMenu" class="world-menu">
             <summary aria-label="Opciones de partida" title="Opciones de partida">
               •••
@@ -621,14 +631,35 @@
       <img id="portraitViewerImage" class="portrait-viewer-image" alt="" />
       <p id="portraitViewerHint">Clic en cualquier lugar o Escape para volver</p>
     </dialog>
-    <script src="spatial-grid.js?v=1.6.0">
+    <dialog id="darwinBook" class="darwin-book" aria-labelledby="bookTitle">
+      <header class="book-header">
+        <div><p class="eyebrow">CUADERNO DE CAMPO · EVOLUCIÓN ACUÁTICA</p><h1 id="bookTitle">Libro de <em>Darwin</em></h1><p id="bookSummary">Tu colección de vida acuática.</p></div>
+        <div class="book-actions"><button id="bookExport">Exportar libro</button><button id="bookImport">Importar libro</button><button id="bookClose" class="book-close" aria-label="Cerrar Libro de Darwin">Volver <span aria-hidden="true">×</span></button></div>
+        <input id="bookFile" type="file" accept=".json,application/json" hidden/>
+      </header>
+      <div class="book-tools">
+        <div class="book-filters" aria-label="Filtrar por alimentación"><button data-book-type="all" aria-pressed="true">Todas</button><button data-book-type="producer" aria-pressed="false">Productores</button><button data-book-type="herbivore" aria-pressed="false">Herbívoros</button><button data-book-type="carnivore" aria-pressed="false">Carnívoros</button></div>
+        <label class="sr-only" for="bookSearch">Buscar especies</label><input id="bookSearch" type="search" placeholder="Buscar nombre, hábitat…" autocomplete="off"/>
+        <label class="sr-only" for="bookSource">Origen de las especies</label><select id="bookSource"><option value="all">Toda la colección</option><option value="included">Incluidas en el juego</option><option value="discovered">Mis descubrimientos</option></select>
+      </div>
+      <div id="bookLayout" class="book-layout">
+        <section id="bookCards" class="book-cards" aria-label="Colección de especies"><div class="book-results"><span id="bookResults"></span><span>Seleccioná una especie para conocerla</span></div><div id="bookGrid" class="book-grid"></div><p id="bookEmpty" class="book-empty hidden">No hay especies con estos filtros. Probá otra búsqueda o explorá un mundo para registrar nuevos habitantes.</p><nav class="book-pagination" aria-label="Páginas de la colección"><button id="bookPrev" aria-label="Página anterior">← Anterior</button><span id="bookPage"></span><button id="bookNext" aria-label="Página siguiente">Siguiente →</button></nav></section>
+        <aside id="bookDetail" class="book-detail hidden" aria-label="Ficha de la especie"></aside>
+      </div>
+      <footer class="book-footer"><p id="bookStatus" role="status"></p><div id="bookSelection" class="book-selection"><span id="bookSelectionSummary"></span><button id="bookClear">Limpiar selección</button><button id="bookPlay" class="primary" disabled>Crear mundo</button></div></footer>
+    </dialog>
+    <script src="darwin-core.js?v=1.7.0"></script>
+    <script src="darwin-data.js?v=1.7.0"></script>
+    <script src="darwin-vault.js?v=1.7.0"></script>
+    <script src="darwin-ui.js?v=1.7.0"></script>
+    <script src="spatial-grid.js?v=1.7.0">
     </script>
-    <script src="ecology.js?v=1.6.0"></script>
-    <script src="world-rules.js?v=1.6.0"></script>
-    <script src="powers.js?v=1.6.0"></script>
-    <script src="sprite-tools.js?v=1.6.0"></script>
-    <script src="evolution.js?v=1.6.0"></script>
-    <script src="app.js?v=1.6.0">
+    <script src="ecology.js?v=1.7.0"></script>
+    <script src="world-rules.js?v=1.7.0"></script>
+    <script src="powers.js?v=1.7.0"></script>
+    <script src="sprite-tools.js?v=1.7.0"></script>
+    <script src="evolution.js?v=1.7.0"></script>
+    <script src="app.js?v=1.7.0">
     </script>
   </body>
 </html>

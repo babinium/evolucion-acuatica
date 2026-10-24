@@ -645,6 +645,7 @@ function maybeMutateSpecies(sp, parent, genes = inheritGenes(parent, sp)) {
   const depth=((Number(sp.variationDepth)||0)+1)%3, serial=state.nextSpeciesId++;
   const identity=depth===0 ? localEvolutionIdentity(sp,genes,serial) : null;
   const child = normalizeSpecies({...sp, id: uid("sp"), parentId: sp.id,
+    bookKey:identity ? null : sp.bookKey,
     variationDepth:depth,identityId:sp.identityId,lineageName:identity?.name || sp.lineageName,
     variationOrdinal:1+state.species.reduce((max,other)=>other.identityId===sp.identityId && other.variationDepth===depth
       ? Math.max(max,other.variationOrdinal) : max,0),
@@ -660,6 +661,7 @@ function maybeMutateSpecies(sp, parent, genes = inheritGenes(parent, sp)) {
     traits: genes, generation: parent.generation + 1, color: colorFor(sp.class, genes)});
   if (depth) child.name=variationName(child);
   state.species.push(child); speciesById.set(child.id, child);
+  if(!depth)queueBookSpecies(child);
   state.lastEvent = `${depth ? "Nueva variación" : "Nueva especie"}: ${child.name}`;
   return child;
 }

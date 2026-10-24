@@ -87,11 +87,13 @@ function applyEvolutionIdentity(root, identity) {
     sp.visualDescription=String(identity.visualDescription).slice(0,2000);
     sp.spritePrompt=sp.visualDescription;
   }
+  queueBookSpecies(root);
 }
 
 function shareEvolutionArtwork(root) {
   for (const sp of identityMembers(root)) if (sp!==root) Object.assign(sp,{
     portraitUrl:root.portraitUrl,spriteUrl:root.spriteUrl,artworkVersion:root.artworkVersion,artworkError:root.artworkError});
+  queueBookSpecies(root);
 }
 
 function ensureLocalEvolutionArtwork(root) {
@@ -136,7 +138,7 @@ function syncEvolutionControls() {
 
 function processEvolutionQueue() {
   if (evolutionWork) return evolutionWork;
-  if (!state.started || !configLoaded || document.hidden || worldStarting || creatingSpecies || state.evolutionAiBlocked) return Promise.resolve();
+  if (!state.started || !configLoaded || document.hidden || worldStarting || creatingSpecies || state.evolutionAiBlocked || document.getElementById('darwinBook').open) return Promise.resolve();
   const root=state.species.find(sp=>sp.variationDepth===0 && sp.evolutionSource
     && (sp.evolutionTextStatus==="pending" || sp.evolutionImageStatus==="pending"));
   if (!root || !state.evolutionAiEnabled) return Promise.resolve();
@@ -156,7 +158,7 @@ function processEvolutionQueue() {
         if (!data.identity || ["name","description","visualDescription"].some(k=>typeof data.identity[k]!=="string" || !data.identity[k].trim())) throw new Error("La IA no devolvió una identidad válida.");
         applyEvolutionIdentity(root,data.identity);root.evolutionTextStatus="ready";refreshEvolutionUI();
       }
-      if (!current() || !state.evolutionAiEnabled || document.hidden || worldStarting || creatingSpecies) return;
+      if (!current() || !state.evolutionAiEnabled || document.hidden || worldStarting || creatingSpecies || document.getElementById('darwinBook').open) return;
       if (!hasLivingIdentity(root)) {root.evolutionImageStatus="skipped";return;}
       if (root.evolutionImageStatus==="pending") {
         root.evolutionImageStatus="generating";refreshEvolutionUI();
