@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createGame} from './harness.mjs';
 
-test('an eight minute default ecosystem reproduces, branches and retains its food web', () => {
+test('an eight minute default ecosystem reproduces, branches and retains its food web', async () => {
   const g=createGame({seed:123456});
+  await g.run('startWorld(false,false)');
   const result=g.run(`(() => {
-    seedWorld(fallbackSpecies(1,1,1));state.chaos=0;
+    state.chaos=0;
     let bounded=true;
     for(let i=0;i<2880;i++) {
       update(1/6);

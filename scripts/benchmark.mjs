@@ -2,7 +2,7 @@ import { createGame } from '../tests/harness.mjs';
 
 const compare = process.argv.find(arg => arg.startsWith("--compare="))?.slice(10);
 const versions = compare ? [{ref: compare, label: compare}, {label: "optimized"}]
-  : (process.argv.includes("--optimized-only") ? [{label:"optimized"}] : [{baseline:true,label:"original"},{label:"optimized"}]);
+  : (process.argv.includes("--optimized-only") ? [{label:"optimized"}] : [{ref:"origin/main",label:"stable"},{label:"optimized"}]);
 for (const {baseline = false, ref, label} of versions) {
   const game = createGame({baseline, ref});
   game.run(`

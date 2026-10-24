@@ -143,5 +143,100 @@
         }
       }
     ]
+  },
+  {
+    "name": "latest-six-species",
+    "species": [
+      {
+        "name": "producer 1",
+        "class": "producer",
+        "traits": {
+          "size": 3,
+          "speed": 0,
+          "attack": 0,
+          "defense": 2,
+          "perception": 4,
+          "fertility": 25,
+          "metabolism": 2,
+          "foodEfficiency": 8,
+          "toxicity": 1
+        }
+      },
+      {
+        "name": "producer 2",
+        "class": "producer",
+        "traits": {
+          "size": 8,
+          "speed": 0,
+          "attack": 0,
+          "defense": 9,
+          "perception": 3,
+          "fertility": 20,
+          "metabolism": 4,
+          "foodEfficiency": 9,
+          "toxicity": 2
+        }
+      },
+      {
+        "name": "herbivore 3",
+        "class": "herbivore",
+        "traits": {
+          "size": 4,
+          "speed": 6,
+          "attack": 0,
+          "defense": 3,
+          "perception": 6,
+          "fertility": 10,
+          "metabolism": 5,
+          "foodEfficiency": 7,
+          "toxicity": 0
+        }
+      },
+      {
+        "name": "herbivore 4",
+        "class": "herbivore",
+        "traits": {
+          "size": 10,
+          "speed": 4,
+          "attack": 0,
+          "defense": 7,
+          "perception": 5,
+          "fertility": 8,
+          "metabolism": 6,
+          "foodEfficiency": 8,
+          "toxicity": 0
+        }
+      },
+      {
+        "name": "carnivore 5",
+        "class": "carnivore",
+        "traits": {
+          "size": 7,
+          "speed": 9,
+          "attack": 8,
+          "defense": 4,
+          "perception": 8,
+          "fertility": 8,
+          "metabolism": 7,
+          "foodEfficiency": 7,
+          "toxicity": 2
+        }
+      },
+      {
+        "name": "carnivore 6",
+        "class": "carnivore",
+        "traits": {
+          "size": 9,
+          "speed": 8,
+          "attack": 7,
+          "defense": 3,
+          "perception": 9,
+          "fertility": 10,
+          "metabolism": 8,
+          "foodEfficiency": 6,
+          "toxicity": 1
+        }
+      }
+    ]
   }
 ]

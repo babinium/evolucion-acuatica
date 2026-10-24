@@ -51,6 +51,7 @@ const state = {
   camera: { x: 1200, y: 1100, zoom: 0.45 },
   env: {},
   envTarget: {},
+  envBaseline: {},
   species: [],
   creatures: [],
   resources: [],
@@ -121,9 +122,11 @@ function rebuildSpatialIndexes() {
     for (const bucket of grid.cells.values()) bucket.length = 0;
   }
   quadrantCounts.clear();
+  preyRenewal.fill(0);huntingPressure.fill(0);
   if (state.habitats) for (const h of state.habitats) h.cover = 0;
   for (const c of state.creatures) {
     const type = getSpecies(c)?.class;
+    if(type)forecastFoodWeb(c,type);
     if (type === "producer" && c.health > 0 && state.habitats) state.habitats[cellIndex(c)].cover += c.size * 0.035;
     if (classGrids[type]) classGrids[type].insert(c);
     if (type && type !== "producer") animalGrid.insert(c);
@@ -358,13 +361,15 @@ function fallbackSpecies(producers, herbivores, carnivores) {
 function initEnvironment() {
   state.env = {};
   state.envTarget = {};
+  state.envBaseline = {};
   for (const [key, def] of Object.entries(envDefs)) {
     state.env[key] = def[3];
     state.envTarget[key] = def[3];
+    state.envBaseline[key] = def[3];
   }
 }
 
-function seedWorld(speciesList) {
+function seedWorld(speciesList,{balancedFounders=false}={}) {
   resetEvolutionWork();
   state.species = speciesList.map((sp) => normalizeSpecies({ ...sp, extinct: false, population: 0 }));
   migrateLineages();
@@ -394,19 +399,29 @@ function seedWorld(speciesList) {
   initHabitats();
 
   for (let i = 0; i < 90; i++) spawnResource(rand(0, state.worldSize), rand(0, state.worldSize), rand(35, 120));
-  const herbivoreSpecies = state.species.filter(sp => sp.class === "herbivore").length;
-  const carnivoreSpecies = state.species.filter(sp => sp.class === "carnivore").length;
+  const groups=Object.fromEntries(['producer','herbivore','carnivore'].map(type=>[type,state.species.filter(sp=>sp.class===type)]));
+  const herbivoreSpecies = groups.herbivore.length;
+  const carnivoreSpecies = groups.carnivore.length;
+  // More identities share the same water instead of multiplying its load.
+  const producerBudget=Math.round(42*Math.sqrt(groups.producer.length));
+  const grazerBudget=Math.round(INITIAL_HERBIVORES_PER_SPECIES*Math.sqrt(herbivoreSpecies));
   // Diversity shares a finite starting prey supply. Afterwards only ecology sets population sizes.
   const hunterBudget = Math.min(carnivoreSpecies * INITIAL_CARNIVORES_PER_SPECIES,
-    Math.max(carnivoreSpecies, Math.floor(herbivoreSpecies * INITIAL_HERBIVORES_PER_SPECIES / INITIAL_PREY_PER_CARNIVORE)));
-  let hunterIndex = 0;
-  for (const sp of state.species) {
-    const count = sp.class === "producer"
-      ? 42
-      : sp.class === "herbivore"
-        ? INITIAL_HERBIVORES_PER_SPECIES
-        : Math.floor(hunterBudget / carnivoreSpecies) + (hunterIndex++ < hunterBudget % carnivoreSpecies ? 1 : 0);
-    for (let i = 0; i < count; i++) spawnCreature(sp, rand(120, state.worldSize - 120), rand(120, state.worldSize - 120), 0, initialGenes(sp));
+    Math.max(carnivoreSpecies, Math.floor(grazerBudget / INITIAL_PREY_PER_CARNIVORE)));
+  const budgets={producer:producerBudget,herbivore:grazerBudget,carnivore:hunterBudget};
+  const grazers=[];
+  for(const type of ['producer','herbivore','carnivore'])for(const [index,sp] of groups[type].entries()) {
+    const count=Math.floor(budgets[type]/groups[type].length)+(index<budgets[type]%groups[type].length?1:0);
+    for(let i=0;i<count;i++) {
+      const food=type==='carnivore'&&grazers.length?pick(grazers):pick(state.resources);
+      const angle=rand(0,Math.PI*2),distance=type==='carnivore'?rand(350,550):rand(20,80);
+      const c=spawnCreature(sp,clamp(food.x+Math.cos(angle)*distance,40,state.worldSize-40),
+        clamp(food.y+Math.sin(angle)*distance,40,state.worldSize-40),0,balancedFounders?balancedFounderGenes(sp):initialGenes(sp));
+      // Mixed, well-fed founders; offspring still receive only energy paid by a parent.
+      c.age=rand(0,bodyOf(c).lifespan*0.2);
+      c.energy=c.maxEnergy*rand(0.8,0.95);c.hungry=false;
+      if(type==='herbivore')grazers.push(c);
+    }
   }
   rebuildSpatialIndexes();
   recalcSpecies();
@@ -475,7 +490,7 @@ async function startWorld(useAI, withImages = true) {
 
   if (!useAI) {
     state.evolutionAiEnabled=false;state.evolutionAiBlocked="";
-    seedWorld(fallbackSpecies(producers, herbivores, carnivores));
+    seedWorld(balanceInitialSpecies(fallbackSpecies(producers, herbivores, carnivores)),{balancedFounders:true});
     return;
   }
 
@@ -489,7 +504,7 @@ async function startWorld(useAI, withImages = true) {
       fresh: document.getElementById("reuseAiSpecies").checked === false
     });
     if (!Array.isArray(data.species) || !data.species.length) throw new Error("La IA no devolvió especies válidas.");
-    const species = data.species.slice(0, 12).map(normalizeSpecies);
+    const species = balanceInitialSpecies(data.species.slice(0, 12));
     let missingImages = 0;
 
     if (withImages) {
@@ -512,7 +527,7 @@ async function startWorld(useAI, withImages = true) {
     }
     hideBusy();
     state.evolutionAiEnabled=withImages;state.evolutionAiBlocked="";
-    seedWorld(species);
+    seedWorld(species,{balancedFounders:true});
     if (missingImages) state.lastEvent = `Ilustraciones listas: ${species.length-missingImages}/${species.length}. El resto usa dibujos locales; la ficha muestra el motivo.`;
   } catch (error) {
     const message = `Fallo IA: ${error.message}`;
@@ -1022,6 +1037,7 @@ function buildEnvControls() {
     const key = input.dataset.env;
     state.env[key] = Number(input.value);
     state.envTarget[key] = Number(input.value);
+    state.envBaseline[key] = Number(input.value);
     refreshWater(); syncNutrientStock(); updateSelection(); invalidate();
     input.nextElementSibling.textContent = Math.round(state.env[key]);
   });
@@ -1222,6 +1238,7 @@ function loadWorld() {
     const legacy = saved.ecologyVersion !== ECOLOGY_VERSION;
     resetEvolutionWork();
     Object.assign(state, saved, { started: true, activeTool: null,
+      envBaseline: {...(saved.envBaseline || saved.envTarget)},
       evolutionAiEnabled: typeof saved.evolutionAiEnabled==="boolean" ? saved.evolutionAiEnabled
         : saved.species.some(sp=>sp.artworkVersion===1 && sp.portraitUrl),
       evolutionAiBlocked: saved.evolutionAiBlocked || "" });
