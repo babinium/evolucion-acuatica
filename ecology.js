@@ -446,19 +446,27 @@ function sense(c, sp, dt, force = false) {
     }
   }
   if (brain.threat) return brain;
-  let score = Infinity;
+  const body = bodyOf(c, sp), criticalGrazer = sp.class === "herbivore" && c.energy <= c.maxEnergy * 0.35;
+  let score = Infinity, immediateMeal = false;
   function consider(target, kind, penalty = 0) {
     if (!targetAlive(target, kind)) return;
     const d = dist(c, target);
     let value = edibleFood(target, kind);
-    if ((kind === "alga" || kind === "producer") && value < Math.min(12, bodyOf(c, sp).intake * 2)) return;
+    const grazing = kind === "alga" || kind === "producer";
+    const reachable = grazing && d <= c.size + (target.radius || target.size) + 8;
+    // A small meal already within bite range pays no travel cost. Still require
+    // half a second of intake so stripped roots cannot trap a forager on crumbs.
+    if (grazing && value < Math.min(12, body.intake * (reachable ? 0.5 : 2))) return;
     if(kind==='corpse' && value<Math.min(12,bodyOf(c,sp).intake*2) && d>c.size+target.radius+7)return;
     if (kind === "producer") value *= bodyOf(target).armor * Math.max(0.3, 1 - target.genes.toxicity * 0.045);
-    // Do not camp on a stripped patch for a fraction of a bite each sensory tick.
-    // It must recover a useful meal before a new forager chooses it again.
     const competition = (foodClaims.get(target) || 0) * (kind === "prey" ? 240 : kind === "corpse" ? 45 : 30);
     const s = d + penalty + competition - Math.min(160, value) * 2.4;
-    if (s < score) { score = s; brain.target = target; brain.kind = kind; }
+    const immediate = criticalGrazer && reachable;
+    // With critical reserves, eat what is at hand before setting off for a
+    // richer patch. Competing reachable meals retain the normal food scoring.
+    if ((immediate && !immediateMeal) || (immediate === immediateMeal && s < score)) {
+      score = s; immediateMeal = immediate; brain.target = target; brain.kind = kind;
+    }
   }
   if (sp.class === "herbivore") {
     for (const r of resourceGrid.query(c.x, c.y, radius)) consider(r, "alga");
@@ -548,13 +556,18 @@ function hunt(c, sp, dt, cachedBrain) {
   if (!wantsFood(c)) return rest(c, dt);
   const brain = cachedBrain || sense(c, sp, 0, true);
   if (!brain.target || !targetAlive(brain.target, brain.kind)) return patrolForFood(c, sp, dt);
-  if(brain.kind==='prey' && getSpecies(brain.target)?.class==='carnivore' && !canHuntCarnivore(c,brain.target)) {
+  const target = brain.target, body = bodyOf(c, sp);
+  const preyClass = brain.kind === 'prey' ? getSpecies(target)?.class : null;
+  if(preyClass==='carnivore' && !canHuntCarnivore(c,target)) {
     releaseFoodClaim(brain);brain.wait=0;return patrolForFood(c,sp,dt);
   }
-  const target = brain.target, body = bodyOf(c, sp);
   if (dist(c, target) > c.size + (target.radius || target.size) + 7) {
     c.state = brain.kind === "corpse" ? "buscando carroña" : "persiguiendo";
-    const sprint=brain.kind==='prey' && c.energy>c.maxEnergy*0.25 ? 1.2 : 1;
+    // Preserve the former 20% boost above 25% reserves, then taper it to the
+    // base speed continuously. Starvation must not cause a sudden speed cliff.
+    // Emergency cannibalism and carrion travel keep their ordinary speed.
+    const sprint=preyClass==='herbivore'
+      ? 1 + 0.2 * clamp(c.energy / (c.maxEnergy * CARNIVORE_EMERGENCY_ENERGY), 0, 1) : 1;
     return steerToward(c, target, body.speed * (c.activity || 1) * sprint / 58, dt);
   }
   if (brain.kind === "corpse") return eatCorpseBite(c, sp, target, dt);
