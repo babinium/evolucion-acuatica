@@ -96,25 +96,6 @@ test('founders have food within perception range even in a large new world',()=>
   assert.equal(result,true);
 });
 
-test('predators delay reproduction with scarce prey and pay for a brood when food is plentiful',()=>{
-  const game=createGame();
-  const result=game.run(`(()=>{
-    seedWorld(balanceInitialSpecies(fallbackSpecies(1,1,1)));
-    state.creatures=[];state.resources=[];state.corpses=[];state.mutationRate=0;
-    const hunter=spawnCreature(state.species.find(sp=>sp.class==='carnivore'),500,500,1);
-    hunter.energy=hunter.maxEnergy;hunter.hungry=false;hunter.age=100;hunter.cooldown=0;
-    Math.random=()=>0;rebuildSpatialIndexes();updateCreatures(0.1);
-    const scarce=state.creatures.length;
-    const herb=state.species.find(sp=>sp.class==='herbivore');
-    for(let i=0;i<8;i++){const c=spawnCreature(herb,800+i*10,500,1);c.energy=c.maxEnergy;}
-    hunter.energy=hunter.maxEnergy;hunter.cooldown=0;rebuildSpatialIndexes();
-    const before=hunter.energy;updateCreatures(0.1);
-    return {scarce,brood:state.creatures.filter(c=>getSpecies(c).class==='carnivore').length,
-      paid:hunter.energy<before-bodyOf(hunter).birthCost+1};
-  })()`);
-  assert.equal(result.scarce,1);assert.equal(result.brood,2);assert.ok(result.paid);
-});
-
 test('weather baseline survives saving, manual changes, and legacy saves without adding reserves',()=>{
   const game=createGame();
   game.run('seedWorld(balanceInitialSpecies(fallbackSpecies(1,1,1)))');
@@ -125,26 +106,6 @@ test('weather baseline survives saving, manual changes, and legacy saves without
   game.run(`(()=>{const saved=JSON.parse(localStorage.getItem('evo-save'));delete saved.envBaseline;
     saved.envTarget.light=17;localStorage.setItem('evo-save',JSON.stringify(saved));loadWorld();})()`);
   assert.equal(game.run('state.envBaseline.light'),17);
-});
-
-test('finite meals alone do not justify a brood when prey cannot renew themselves',()=>{
-  const game=createGame();
-  const result=game.run(`(()=>{
-    seedWorld(balanceInitialSpecies(fallbackSpecies(1,1,1)));
-    state.creatures=[];state.resources=[];state.corpses=[];
-    const c=spawnCreature(state.species.find(sp=>sp.class==='carnivore'),500,500,1);
-    c.energy=c.maxEnergy;
-    state.corpses=[{id:'finite',x:520,y:500,amount:100,radius:15,toxicity:0}];
-    const herb=state.species.find(sp=>sp.class==='herbivore');
-    for(let i=0;i<8;i++){const prey=spawnCreature(herb,800+i*10,500,1);prey.energy=prey.maxEnergy;}
-    rebuildSpatialIndexes();const before=c.energy+state.corpses[0].amount;
-    const renewed=foodSupportsBrood(c,bodyOf(c));
-    for(const prey of state.creatures)if(getSpecies(prey).class==='herbivore')prey.energy=prey.maxEnergy*0.2;
-    rebuildSpatialIndexes();
-    const depleted=foodSupportsBrood(c,bodyOf(c));
-    return {renewed,depleted,unchanged:before===c.energy+state.corpses[0].amount};
-  })()`);
-  assert.ok(result.renewed && !result.depleted && result.unchanged);
 });
 
 for(const sample of [

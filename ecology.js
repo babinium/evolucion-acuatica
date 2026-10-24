@@ -8,7 +8,7 @@ const traitHelp = {
   attack: "Aumenta el daño de los carnívoros; mantener y usar armas cuesta energía. Las otras dietas no usan ataque.",
   defense: "Reduce el daño y la velocidad a la que te comen; la armadura cuesta energía y dificulta nadar.",
   perception: "Los animales detectan comida y amenazas más lejos; en productores mejora la captación de nutrientes. Tiene costo de mantenimiento.",
-  fertility: "Más oportunidades de reproducirse y menor espera entre crías; cuesta mantenimiento y cada cría consume reservas del progenitor. Cero impide reproducirse.",
+  fertility: "Reduce la espera entre crías. En animales el reloj es fijo: al terminar, espera 55% de salud y 75% de energía. Cuesta mantenimiento. Cero impide reproducirse.",
   metabolism: "Acelera actividad, digestión y fotosíntesis; también el gasto, la necesidad de oxígeno y el envejecimiento.",
   foodEfficiency: "Aprovecha una mayor parte del alimento o la luz; un sistema eficiente tiene mayor costo de mantenimiento.",
   toxicity: "Envenena a quien te come y disuade ataques; fabricar toxinas consume energía. No protege de la contaminación del agua."
@@ -16,40 +16,10 @@ const traitHelp = {
 const waterCells = [];
 const cleanWaterCells = [];
 const foodClaims = new Map();
-// Reused, transient forecasts; independent of species identity and saved food.
-const preyRenewal = Array(16).fill(0);
-const huntingPressure = Array(16).fill(0);
-
-function forecastFoodWeb(c,type) {
-  if(type==='producer' || c.health<=0 || c.energy<=-35)return;
-  const body=bodyOf(c),cell=cellIndex(c);
-  if(type==='carnivore') {
-    huntingPressure[cell]+=body.basal*localWater(c).temperatureActivity;
-    return;
-  }
-  if(isProtected(c)||body.fertility<=0||c.health<c.maxHealth*0.65)return;
-  const brain=c._brain;
-  const feeding=brain?.target && targetAlive(brain.target,brain.kind);
-  // A grazer that just paid for a baby can replenish its reserves while feeding.
-  // Looking only at its current stomach mistakes successful breeding for famine.
-  const opportunity=c.state==='huyendo'||c.energy<0 ? 0
-    : feeding||c.energy>c.maxEnergy*0.75 ? 1 : clamp(c.energy/c.maxEnergy,0,1)*0.5;
-  preyRenewal[cell]+=(body.tissue+body.birthEnergy)*opportunity/(body.birthWait+1/(0.09*body.fertility));
-}
-
-function renewingHuntingGround(c,body) {
-  const horizon=Math.max(45,body.maturity*2),cell=state.worldSize/4;
-  const reach=body.vision+body.speed*horizon*0.5;
-  let renewal=0,pressure=0;
-  // Include reachable foraging grounds, not just one stationary sensory circle.
-  // Sixteen aggregates replace another search through every animal per parent.
-  for(let i=0;i<16;i++) {
-    const x=(i%4+0.5)*cell,y=(Math.floor(i/4)+0.5)*cell;
-    if(Math.hypot(c.x-x,c.y-y)>reach+cell*Math.SQRT1_2)continue;
-    renewal+=preyRenewal[i];pressure+=huntingPressure[i];
-  }
-  return renewal*body.assimilation*0.6 >= pressure+body.basal*localWater(c).temperatureActivity;
-}
+const ANIMAL_BIRTH_HEALTH = 0.55;
+const ANIMAL_BIRTH_ENERGY = 0.75;
+const ANIMAL_BIRTH_COST = 0.25;
+const CARNIVORE_EMERGENCY_ENERGY = 0.25;
 
 function sanitizeGenes(traits, type) {
   const genes = {};
@@ -76,7 +46,7 @@ function phenotype(genes, type) {
   const activity = 0.6 + t.metabolism * 0.09;
   const maxEnergy = 120 + t.size * 12;
   const tissue = 12 + t.size * 5;
-  const birthEnergy = maxEnergy * (type === "producer" ? 0.12 : 0.28);
+  const birthEnergy = maxEnergy * (type === "producer" ? 0.12 : ANIMAL_BIRTH_ENERGY);
   const upkeep = 0.16 + t.size * 0.035 + t.defense ** 2 * 0.002
     + t.perception ** 2 * 0.002 + t.toxicity ** 2 * 0.003
     + t.foodEfficiency ** 2 * 0.0015 + fertility ** 2 * 0.22
@@ -99,8 +69,9 @@ function phenotype(genes, type) {
     damage: (5 + t.attack * 3.6 + t.size * 0.7) * activity,
     photosynthesis: (2.2 + t.size * 0.32) * activity * (0.5 + t.foodEfficiency * 0.08) * (0.7 + t.perception * 0.05),
     fertility,
-    // Reserves AND edible tissue of a baby are paid by the parent.
-    birthCost: birthEnergy + tissue + 6,
+    // Animal offspring receive the divine subsidy chosen by the player.
+    // Producers continue paying for the child's reserves and edible tissue.
+    birthCost: type !== "producer" ? maxEnergy*ANIMAL_BIRTH_COST : birthEnergy + tissue + 6,
     birthEnergy,
     birthWait: type === "carnivore" ? 60 + (1 - fertility) * 140 : 20 + (1 - fertility) * 65,
     maturity: (type === "producer" ? 12 : type === "carnivore" ? 35 : 18) / activity,
@@ -296,12 +267,14 @@ function updateCreatures(dt) {
     }
     if (c.energy < 0) c.health = Math.max(0, c.health - dt * (0.6 + Math.abs(c.energy) * 0.15));
     if (c.age > body.lifespan) c.health = Math.max(0, c.health - dt * 3);
-    const plant = sp.class === "producer";
-    const fertile = body.fertility > 0 && c.health > c.maxHealth * (plant ? 0.35 : 0.65) && c.age >= body.maturity
-      && c.energy >= (plant ? body.birthCost + c.maxEnergy * 0.1 : c.maxEnergy * 0.76)
+    const plant = sp.class === "producer", animal = !plant;
+    const healthy = plant ? c.health > c.maxHealth*0.35 : c.health >= c.maxHealth*ANIMAL_BIRTH_HEALTH;
+    const fertile = body.fertility > 0 && healthy && c.age >= body.maturity
+      && c.energy >= (plant ? body.birthCost + c.maxEnergy * 0.1 : c.maxEnergy*ANIMAL_BIRTH_ENERGY)
       && c.cooldown <= 0 && state.creatures.length + newborns.length < MAX_CREATURES;
-    if (fertile && Math.random() < 1 - Math.exp(-dt * 0.09 * body.fertility) && !isCrowdedForReproduction(c, sp)
-      && (sp.class !== 'carnivore' || foodSupportsBrood(c, body))) {
+    // A ready animal waits at zero until it can breed. One birth starts a new
+    // fertility interval; missed opportunities never accumulate into a burst.
+    if (fertile && (animal || (Math.random() < 1 - Math.exp(-dt * 0.09 * body.fertility) && !isCrowdedForReproduction(c, sp)))) {
       const genes = inheritGenes(c, sp);
       const childSpecies = maybeMutateSpecies(sp, c, genes);
       c.energy -= body.birthCost;
@@ -319,9 +292,13 @@ function updateCreatures(dt) {
   }
   for (const item of newborns) {
     const child = spawnCreature(item.species, item.parent.x + rand(-65, 65), item.parent.y + rand(-65, 65), item.parent.generation + 1, item.genes);
-    child.energy = Math.max(0, Math.min(child.maxEnergy, item.energy, bodyOf(item.parent).birthCost - child.tissue - 5));
+    const animal = item.species.class !== "producer";
+    child.energy = animal ? child.maxEnergy*ANIMAL_BIRTH_ENERGY
+      : Math.max(0, Math.min(child.maxEnergy, item.energy, bodyOf(item.parent).birthCost - child.tissue - 5));
     child.age = 0;
-    child.cooldown = bodyOf(child).maturity;
+    child.cooldown = animal ? bodyOf(child).birthWait : bodyOf(child).maturity;
+    child.parentCreatureId = item.parent.id;
+    if(animal)child.hungry=false;
   }
   removeDeadCreatures();
 }
@@ -348,34 +325,10 @@ function isCrowdedForReproduction(c, sp) {
   const radius = sp.class === "producer" ? 125 : 185;
   const limit = sp.class === "producer" ? 8 : 12;
   let count = 0;
-  for (const other of creatureGrid.query(c.x, c.y, radius)) {
+  for (const other of classGrids[sp.class].query(c.x, c.y, radius)) {
     if (other.id !== c.id && other.health > 0 && ++count >= limit) return true;
   }
   return false;
-}
-
-function foodSupportsBrood(c,body) {
-  // Run only on an otherwise eligible reproductive attempt, using existing
-  // spatial indexes. Hunters delay a brood when local food cannot support it.
-  let food=0;
-  const horizon=Math.max(45,body.maturity*2);
-  const maintenance=body.basal*localWater(c).temperatureActivity*horizon;
-  // The parent already pays the baby's tissue and energy. Count those stores
-  // before asking the neighbourhood to fund both animals' next foraging cycle.
-  let demand=Math.max(0,maintenance-Math.max(0,c.energy-body.birthCost))
-    +Math.max(0,maintenance-body.birthEnergy);
-  for(const corpse of corpseGrid.query(c.x,c.y,body.vision))food+=Math.max(0,corpse.amount);
-  for(const other of animalGrid.query(c.x,c.y,body.vision)) {
-    if(other.id===c.id || other.health<=0 || other.energy<=-35)continue;
-    if(getSpecies(other).class==='carnivore') {
-      demand+=Math.max(0,bodyOf(other).basal*localWater(other).temperatureActivity*horizon-Math.max(0,other.energy));
-    }
-    else if(!isProtected(other)) {
-      food+=edibleFood(other,'prey')*0.35;
-    }
-  }
-  return food*body.assimilation >= Math.max(body.birthEnergy,demand)
-    && renewingHuntingGround(c,body);
 }
 
 function sameSpeciesInQuadrant(c) { return quadrantCounts.get(quadrantKey(c.x, c.y, c.speciesId)) || 0; }
@@ -435,10 +388,19 @@ function detectionRange(observer, target, baseRange) {
   return Math.max(observer.size + target.size + 12, baseRange * (0.6 + target.genes.size * 0.065) / (1 + cover * 0.5));
 }
 
+function canHuntCarnivore(c,target) {
+  if(c.energy>c.maxEnergy*CARNIVORE_EMERGENCY_ENERGY || c.id===target.id)return false;
+  if(target.parentCreatureId===c.id && target.age<bodyOf(target).maturity)return false;
+  if(c.parentCreatureId===target.id && c.age<bodyOf(c).maturity)return false;
+  return true;
+}
+
 function sense(c, sp, dt, force = false) {
   const brain = brainOf(c);
   brain.wait -= dt;
-  if (!force && brain.wait > 0 && (!brain.target || targetAlive(brain.target, brain.kind))) return brain;
+  const staleEmergency=brain.kind==='prey' && brain.target && getSpecies(brain.target)?.class==='carnivore'
+    && !canHuntCarnivore(c,brain.target);
+  if (!force && !staleEmergency && brain.wait > 0 && (!brain.target || targetAlive(brain.target, brain.kind))) return brain;
   brain.wait = 0.18 + (c.id % 7) * 0.01;
   releaseFoodClaim(brain); brain.kind = null; brain.threat = null;
   const radius = bodyOf(c, sp).vision;
@@ -461,6 +423,7 @@ function sense(c, sp, dt, force = false) {
     const d = dist(c, target);
     let value = edibleFood(target, kind);
     if ((kind === "alga" || kind === "producer") && value < Math.min(12, bodyOf(c, sp).intake * 2)) return;
+    if(kind==='corpse' && value<Math.min(12,bodyOf(c,sp).intake*2) && d>c.size+target.radius+7)return;
     if (kind === "producer") value *= bodyOf(target).armor * Math.max(0.3, 1 - target.genes.toxicity * 0.045);
     // Do not camp on a stripped patch for a fraction of a bite each sensory tick.
     // It must recover a useful meal before a new forager chooses it again.
@@ -474,14 +437,26 @@ function sense(c, sp, dt, force = false) {
       consider(other, "producer", other.genes.defense * 6 + other.genes.toxicity * 12);
     }
   } else {
-    for (const corpse of corpseGrid.query(c.x, c.y, radius)) consider(corpse, "corpse", -70 + (corpse.toxicity || 0) * 8);
-    for (const other of animalGrid.query(c.x, c.y, radius)) {
-      if (other.id === c.id || other.speciesId === c.speciesId) continue;
+    // Nearby carrion avoids a needless fight. Distant scent is a fallback, so a
+    // hunter won't abandon a reachable meal for scraps across the map.
+    if(state.corpses.length)for (const corpse of corpseGrid.query(c.x, c.y, radius*0.5)) consider(corpse, "corpse", -70 + (corpse.toxicity || 0) * 8);
+    if(!brain.target)for (const other of classGrids.herbivore.query(c.x, c.y, radius)) {
       if (dist(c, other) > detectionRange(c, other, radius)) continue;
-      const otherSp = getSpecies(other);
       consider(other, "prey", other.genes.defense * 9 + other.genes.toxicity * 15
         + other.energy / other.maxEnergy * 70 + other.health / other.maxHealth * 40
-        + Math.max(0, other.genes.size - c.genes.size) * 18 + (otherSp.class === "carnivore" ? 180 : 40));
+        + Math.max(0, other.genes.size - c.genes.size) * 18 + 40);
+    }
+    if(!brain.target && state.corpses.length)for(const corpse of corpseGrid.query(c.x,c.y,radius*2)) {
+      consider(corpse,'corpse',-70+(corpse.toxicity||0)*8);
+    }
+    // A living carnivore is a last resort, never a cheaper alternative to a
+    // visible grazer or edible carrion. Health alone cannot activate this mode.
+    if(!brain.target && c.energy<=c.maxEnergy*CARNIVORE_EMERGENCY_ENERGY) {
+      for(const other of classGrids.carnivore.query(c.x,c.y,radius)) {
+        if(!canHuntCarnivore(c,other) || dist(c,other)>detectionRange(c,other,radius))continue;
+        consider(other,'prey',other.genes.defense*9+other.genes.toxicity*15
+          +other.health/other.maxHealth*40+Math.max(0,other.genes.size-c.genes.size)*18);
+      }
     }
   }
   if (brain.target) foodClaims.set(brain.target, (foodClaims.get(brain.target) || 0) + 1);
@@ -544,6 +519,9 @@ function hunt(c, sp, dt, cachedBrain) {
   if (!wantsFood(c)) return rest(c, dt);
   const brain = cachedBrain || sense(c, sp, 0, true);
   if (!brain.target || !targetAlive(brain.target, brain.kind)) return patrolForFood(c, sp, dt);
+  if(brain.kind==='prey' && getSpecies(brain.target)?.class==='carnivore' && !canHuntCarnivore(c,brain.target)) {
+    releaseFoodClaim(brain);brain.wait=0;return patrolForFood(c,sp,dt);
+  }
   const target = brain.target, body = bodyOf(c, sp);
   if (dist(c, target) > c.size + (target.radius || target.size) + 7) {
     c.state = brain.kind === "corpse" ? "buscando carroña" : "persiguiendo";

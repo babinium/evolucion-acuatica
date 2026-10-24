@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createGame} from './harness.mjs';
 
-test('an eight minute default ecosystem reproduces, branches and retains its food web', async () => {
+test('an eight minute default ecosystem reproduces, inherits variation and retains its food web', async () => {
   const g=createGame({seed:123456});
   await g.run('startWorld(false,false)');
   const result=g.run(`(() => {
@@ -14,12 +14,14 @@ test('an eight minute default ecosystem reproduces, branches and retains its foo
         && state.corpses.length<=MAX_CORPSES && state.species.length<=MAX_EVOLVED_SPECIES;
     }
     return {counts:countLivingClasses(),species:state.species.length,
+      inheritedVariation:state.creatures.some(c=>c.generation>=3 && geneticDistance(c.genes,getSpecies(c).traits,getSpecies(c).class)>0.01),
       generation:Math.max(...state.creatures.map(c=>c.generation)),bounded,
       finite:state.creatures.every(c=>[c.x,c.y,c.vx,c.vy,c.energy,c.health,c.maxEnergy,c.tissue,...Object.values(c.genes)].every(Number.isFinite)),
       validWater:state.habitats.every(h=>h.stock>=0&&h.stock<=1&&Number.isFinite(h.oxygen))};
   })()`);
   assert.ok(Object.values(result.counts).every(n=>n>0));
-  assert.ok(result.species>3);assert.ok(result.generation>=4);
+  // Branching follows genetic distance, not a deadline in simulated minutes.
+  assert.ok(result.species>=3 && result.inheritedVariation);assert.ok(result.generation>=4);
   assert.ok(result.bounded && result.finite && result.validWater);
 });
 
