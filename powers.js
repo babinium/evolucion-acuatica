@@ -35,10 +35,11 @@ function isProtected(creature) {
   return creature.protected > 0 || (state.zones.length > 0 && inEffectZone(creature, "protect"));
 }
 
-function damageCreature(creature, amount) {
+function damageCreature(creature, amount, cause='daños') {
   if (creature.health <= 0 || isProtected(creature)) return 0;
   const damage = Math.min(creature.health, Math.max(0, amount));
   creature.health -= damage;
+  if(creature.health===0)creature.deathCause=cause;
   return damage;
 }
 
@@ -236,7 +237,7 @@ function applyTool(x, y) {
       : "Los animales del área ya tienen sus reservas llenas, o no hay animales. Las plantas necesitan luz y nutrientes.";
     if (affected) addPowerMarker(id, x, y, radius);
   } else if (id === "disaster") {
-    for (const c of targets) if (damageCreature(c, 60) > 0) affected++;
+    for (const c of targets) if (damageCreature(c, 60,'catástrofe') > 0) affected++;
     const deaths = removeDeadCreatures();
     const protectedCount = targets.filter(c => isProtected(c)).length;
     message = affected ? `Catástrofe: ${powerCount(affected, "afectado", "afectados")}, ${powerCount(deaths, "baja", "bajas")}${protectedCount ? `; ${powerCount(protectedCount, "protegido resistió", "protegidos resistieron")}` : ""}.`

@@ -9,7 +9,7 @@ const traitHelp = {
   defense: "Reduce el daño y la velocidad a la que te comen; la armadura cuesta energía y dificulta nadar.",
   perception: "Los animales detectan comida y amenazas más lejos; en productores mejora la captación de nutrientes. Tiene costo de mantenimiento.",
   fertility: "Reduce la espera entre crías. En animales el reloj es fijo: al terminar, espera 55% de salud y 75% de energía. Cuesta mantenimiento. Cero impide reproducirse.",
-  metabolism: "Acelera actividad, digestión y fotosíntesis; también el gasto, la necesidad de oxígeno y el envejecimiento.",
+  metabolism: "Acelera actividad, digestión, fotosíntesis y madurez; también el gasto y la necesidad de oxígeno.",
   foodEfficiency: "Aprovecha una mayor parte del alimento o la luz; un sistema eficiente tiene mayor costo de mantenimiento.",
   toxicity: "Envenena a quien te come y disuade ataques; fabricar toxinas consume energía. No protege de la contaminación del agua."
 };
@@ -20,6 +20,8 @@ const ANIMAL_BIRTH_HEALTH = 0.55;
 const ANIMAL_BIRTH_ENERGY = 0.75;
 const ANIMAL_BIRTH_COST = 0.25;
 const CARNIVORE_EMERGENCY_ENERGY = 0.25;
+const MIN_ADULT_BREEDING_INTERVALS = 5;
+const HERBIVORES_PER_CARNIVORE_BROOD = 12;
 
 function sanitizeGenes(traits, type) {
   const genes = {};
@@ -44,6 +46,9 @@ function phenotype(genes, type) {
   const t = genes;
   const fertility = t.fertility / traitMax("fertility", type);
   const activity = 0.6 + t.metabolism * 0.09;
+  const agingRate = 0.75 + t.metabolism * 0.07;
+  const birthWait = type === "carnivore" ? 2 * (60 + (1 - fertility) * 140) : 20 + (1 - fertility) * 65;
+  const maturity = (type === "producer" ? 12 : type === "carnivore" ? 35 : 18) / activity;
   const maxEnergy = 120 + t.size * 12;
   const tissue = 12 + t.size * 5;
   const birthEnergy = maxEnergy * (type === "producer" ? 0.12 : ANIMAL_BIRTH_ENERGY);
@@ -73,9 +78,11 @@ function phenotype(genes, type) {
     // Producers continue paying for the child's reserves and edible tissue.
     birthCost: type !== "producer" ? maxEnergy*ANIMAL_BIRTH_COST : birthEnergy + tissue + 6,
     birthEnergy,
-    birthWait: type === "carnivore" ? 2 * (60 + (1 - fertility) * 140) : 20 + (1 - fertility) * 65,
-    maturity: (type === "producer" ? 12 : type === "carnivore" ? 35 : 18) / activity,
-    lifespan: (type === "producer" ? 420 : 300) + t.size * 12,
+    birthWait, maturity, agingRate,
+    // Age is biological, but brood waits are simulation seconds. Convert the
+    // five adult intervals to the same clock, retaining the previous lifespan floor.
+    lifespan: Math.max((type === "producer" ? 420 : 300) + t.size * 12,
+      maturity + MIN_ADULT_BREEDING_INTERVALS * birthWait * agingRate),
     tissue,
     holdfast: type === "producer" ? tissue * 0.2 : 0
   };
@@ -87,6 +94,13 @@ function bodyOf(c, sp = getSpecies(c)) {
     Object.defineProperty(c, "_body", {value: phenotype(c.genes, sp.class), writable: true, configurable: true});
   }
   return c._body;
+}
+
+function lifeOf(c) {
+  const body=bodyOf(c),total=body.lifespan/body.agingRate;
+  const elapsed=Math.max(0,c.age/body.agingRate),remaining=Math.max(0,total-elapsed);
+  return {total,elapsed,remaining,fraction:clamp(remaining/total,0,1),
+    stage:c.age<body.maturity?'Juvenil':remaining<=total*0.2?'Vejez próxima':'Adulto'};
 }
 
 function cellIndex(point) {
@@ -230,12 +244,16 @@ function updateZones(dt) {
 function updateCreatures(dt) {
   refreshWater();
   const newborns = [];
+  let broodFoodCounts=null,carnivoreBroods=0;
   for (const c of state.creatures) {
     const sp = getSpecies(c);
     if (!sp || c.health <= 0 || c.energy <= -35) continue;
     const body = bodyOf(c, sp), water = localWater(c);
     const oldX = c.x, oldY = c.y;
-    c.age += dt * (0.75 + c.genes.metabolism * 0.07);
+    c.age += dt * body.agingRate;
+    if(c.age>=body.lifespan) {
+      c.health=0;c.deathCause='vejez';continue;
+    }
     c.cooldown = Math.max(0, c.cooldown - dt);
     c.protected = Math.max(0, c.protected - dt);
     const respiration = body.basal * water.temperatureActivity * dt;
@@ -261,25 +279,34 @@ function updateCreatures(dt) {
     if (c.y === 8 || c.y === state.worldSize - 8) c.vy *= -0.3;
     if (isProtected(c)) c.health = Math.min(c.maxHealth, c.health + dt * 2);
     else {
-      damageCreature(c, dt * Math.max(0, 16 + c.genes.metabolism * 0.6 - water.oxygen) * 0.16);
-      damageCreature(c, dt * Math.max(0, water.toxicity - 25) * 0.025);
-      damageCreature(c, dt * Math.max(0, 12 - water.temperature, water.temperature - 86) * 0.06);
+      damageCreature(c, dt * Math.max(0, 16 + c.genes.metabolism * 0.6 - water.oxygen) * 0.16,'falta de oxígeno');
+      damageCreature(c, dt * Math.max(0, water.toxicity - 25) * 0.025,'contaminación');
+      damageCreature(c, dt * Math.max(0, 12 - water.temperature, water.temperature - 86) * 0.06,'temperatura extrema');
     }
-    if (c.energy < 0) c.health = Math.max(0, c.health - dt * (0.6 + Math.abs(c.energy) * 0.15));
-    if (c.age > body.lifespan) c.health = Math.max(0, c.health - dt * 3);
+    if (c.energy < 0 && c.health>0) {
+      c.health = Math.max(0, c.health - dt * (0.6 + Math.abs(c.energy) * 0.15));
+      if(c.health===0)c.deathCause='hambre';
+    }
     const plant = sp.class === "producer", animal = !plant;
     const healthy = plant ? c.health > c.maxHealth*0.35 : c.health >= c.maxHealth*ANIMAL_BIRTH_HEALTH;
     const fertile = body.fertility > 0 && healthy && c.age >= body.maturity
       && c.energy >= (plant ? body.birthCost + c.maxEnergy * 0.1 : c.maxEnergy*ANIMAL_BIRTH_ENERGY)
       && c.cooldown <= 0 && state.creatures.length + newborns.length < MAX_CREATURES;
+    let supported=fertile;
+    if(supported && sp.class==='carnivore') {
+      // One lazy count per step, shared by all ready hunters and queued broods.
+      broodFoodCounts ||= countLivingClasses();
+      supported=preySupportsBrood(carnivoreBroods,broodFoodCounts);
+    }
     // A ready animal waits at zero until it can breed. One birth starts a new
     // fertility interval; missed opportunities never accumulate into a burst.
-    if (fertile && (animal || (Math.random() < 1 - Math.exp(-dt * 0.09 * body.fertility) && !isCrowdedForReproduction(c, sp)))) {
+    if (supported && (animal || (Math.random() < 1 - Math.exp(-dt * 0.09 * body.fertility) && !isCrowdedForReproduction(c, sp)))) {
       const genes = inheritGenes(c, sp);
       const childSpecies = maybeMutateSpecies(sp, c, genes);
       c.energy -= body.birthCost;
       c.cooldown = body.birthWait;
       newborns.push({parent: c, species: childSpecies, genes, energy: Math.min(body.birthCost, body.birthEnergy)});
+      if(sp.class==='carnivore')carnivoreBroods++;
     }
     creatureGrid.move(c, oldX, oldY);
     classGrids[sp.class].move(c, oldX, oldY);
@@ -298,13 +325,18 @@ function updateCreatures(dt) {
 }
 
 function removeDeadCreatures() {
-  let write = 0, deaths = 0;
+  let write = 0, deaths = 0, selectionDied = false;
   for (const c of state.creatures) {
     if (c.health > 0 && c.energy > -35) { state.creatures[write++] = c; continue; }
     deaths++;
     releaseFoodClaim(c._brain);
     const sp = getSpecies(c);
     if (!sp) continue;
+    c.deathCause ||= c.energy<=-35 ? 'hambre' : 'daños';
+    if(state.selected===c) {
+      selectedDeathMessage=`${sp.name} · Individuo #${c.id}: murió por ${c.deathCause}.`;
+      state.lastEvent=selectedDeathMessage;selectionDied=true;
+    }
     const amount = Math.max(0, c.tissue ?? bodyOf(c, sp).tissue) + Math.max(0, c.energy);
     if (sp.class !== "producer" && amount > 0 && state.corpses.length < MAX_CORPSES) {
       const corpse = {id: uid("corpse"), x: c.x, y: c.y, amount, radius: Math.sqrt(amount) * 1.7, toxicity: c.genes.toxicity};
@@ -312,6 +344,7 @@ function removeDeadCreatures() {
     } else recycleNutrients(c, amount);
   }
   state.creatures.length = write;
+  if(selectionDied)updateSelection();
   return deaths;
 }
 
@@ -329,6 +362,10 @@ function countLivingClasses() {
   const counts = {producer: 0, herbivore: 0, carnivore: 0};
   for (const c of state.creatures) { const sp = getSpecies(c); if (sp && c.health > 0 && c.energy > -35) counts[sp.class]++; }
   return counts;
+}
+
+function preySupportsBrood(pending=0,counts=countLivingClasses()) {
+  return counts.herbivore >= (counts.carnivore+pending+1)*HERBIVORES_PER_CARNIVORE_BROOD;
 }
 
 function producerThink(c, sp, dt) {
@@ -493,7 +530,7 @@ function eatProducer(c, sp, dt, counts, cachedBrain) {
     const tissue = Math.min(bite - energy, Math.max(0, target.tissue - plantBody.holdfast));
     target.tissue -= tissue;
     const healthLoss = tissue / Math.max(1, plantBody.tissue) * target.maxHealth;
-    damageCreature(target, healthLoss);
+    damageCreature(target, healthLoss,'pastoreo');
     bite = energy + tissue;
   }
   consumeFood(c, bite, assimilation, toxin, dt);
@@ -502,7 +539,7 @@ function eatProducer(c, sp, dt, counts, cachedBrain) {
 
 function consumeFood(c, amount, assimilation, toxin, dt) {
   c.energy = Math.min(c.maxEnergy, c.energy + amount * assimilation);
-  damageCreature(c, amount * toxin * 0.022);
+  damageCreature(c, amount * toxin * 0.022,'toxinas del alimento');
   recycleNutrients(c, amount * (1 - assimilation) * 0.65);
   c.vx *= Math.exp(-dt * 12); c.vy *= Math.exp(-dt * 12);
 }
@@ -522,8 +559,8 @@ function hunt(c, sp, dt, cachedBrain) {
   }
   if (brain.kind === "corpse") return eatCorpseBite(c, sp, target, dt);
   const preyBody = bodyOf(target);
-  damageCreature(target, dt * body.damage * preyBody.armor * (c.activity || 1));
-  damageCreature(c, dt * (target.genes.defense * 0.1 + target.genes.toxicity * 0.15) * body.armor);
+  damageCreature(target, dt * body.damage * preyBody.armor * (c.activity || 1),'caza');
+  damageCreature(c, dt * (target.genes.defense * 0.1 + target.genes.toxicity * 0.15) * body.armor,'defensa de la presa');
   c.energy -= dt * (0.2 + c.genes.attack * 0.055);
   // Keep swimming during a strike; braking here makes fleeing prey escape after
   // every bite regardless of the predator's speed advantage.

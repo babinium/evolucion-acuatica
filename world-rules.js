@@ -12,7 +12,7 @@ function initialSpeciesFitness(sp) {
   if (sp.class==='producer') {
     // Budget for depleted (35%) water, not a permanently full nutrient tank.
     const income=body.photosynthesis*(1-((48-50)/55)**2)*0.88*(24.5/(24.5+25));
-    const lifetime=body.lifespan/(0.75+sp.traits.metabolism*0.07)-body.maturity;
+    const lifetime=(body.lifespan-body.maturity)/body.agingRate;
     const margin=income-upkeep-body.birthCost*3/lifetime;
     return {valid:margin>=0.15,upkeep,income,margin};
   }

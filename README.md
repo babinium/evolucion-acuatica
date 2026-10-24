@@ -2,7 +2,7 @@
 
 Un simulador de evolución con vista de dios: productores, herbívoros, depredadores, mutaciones e intervenciones. HTML, CSS y JavaScript con canvas, sin dependencias ni compilación.
 
-**Versión estable: [1.5.2](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.5.2).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
+**Versión estable: [1.6.0](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.6.0).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
 
 ## Jugar
 
@@ -82,15 +82,27 @@ Los productores necesitan madurez, salud, reservas y espacio local para reproduc
 
 ## Ayuda divina a los animales
 
-La reproducción de herbívoros y carnívoros sigue un reloj determinado por su fertilidad: más fertilidad reduce el intervalo y cero implica esterilidad. Necesitan estar maduros, tener **55% de salud y 75% de energía o más** y haber terminado su espera. Al cumplirlo nace una sola cría y empieza un intervalo nuevo. Si falta salud o energía, el reloj queda en cero hasta recuperarse; las oportunidades perdidas no se acumulan. Cada recién nacido espera su propio intervalo completo antes de su primera cría, además de madurar. Los fundadores comienzan en fases distintas para evitar una explosión sincronizada al iniciar.
+La reproducción de herbívoros y carnívoros sigue un reloj determinado por su fertilidad: más fertilidad reduce el intervalo y cero implica esterilidad. Necesitan estar maduros, tener **55% de salud y 75% de energía o más** y haber terminado su espera. Los carnívoros necesitan además la reserva de presas descrita abajo. Al cumplirlo nace una sola cría y empieza un intervalo nuevo. Si falta salud, energía o presas, el reloj queda en cero hasta recuperarse; las oportunidades perdidas no se acumulan. Cada recién nacido espera su propio intervalo completo antes de su primera cría, además de madurar. Los fundadores comienzan en fases distintas para evitar una explosión sincronizada al iniciar.
 
 Para los carnívoros, con fertilidad `F` entre 0 y 20, el intervalo es `2 × [60 + (1 − F/20) × 140]`, equivalente a **`400 − 14 × F` segundos de simulación**. Es el doble del intervalo anterior: fertilidad 5 espera 330 s; 10 espera 260 s; 15 espera 190 s; y 20 espera 120 s. Fertilidad cero sigue impidiendo criar. Se aplica tanto al intervalo entre nacimientos como a la espera completa de las crías; herbívoros y productores conservan sus tiempos.
 
-Cada nacimiento descuenta **25% de la capacidad máxima de energía del progenitor**. La cría recibe **75% de su propia capacidad**, conserva el tamaño heredado y empieza saciada. Es una excepción divina explícita a la conservación de energía y tejido, autorizada para facilitar la renovación de cazadores y presas. No consume API. La densidad local, el azar de nacimiento y la estimación de renovación de presas ya no vetan estas crías; se conserva el límite total de 2.400 individuos para cuidar la PC.
+Cada nacimiento descuenta **25% de la capacidad máxima de energía del progenitor**. La cría recibe **75% de su propia capacidad**, conserva el tamaño heredado y empieza saciada. Es una excepción divina explícita a la conservación de energía y tejido, autorizada para facilitar la renovación de cazadores y presas. No consume API. Las crías animales no dependen del azar ni de la densidad local. Los carnívoros respetan el recuento de presas de abajo y todos conservan el límite total de 2.400 individuos para cuidar la PC.
 
-El inspector muestra el intervalo y si el individuo espera tiempo, madurez, energía o salud. Las partidas guardadas conservan sus genes, reservas y tiempo pendiente al cargar; el beneficio de energía se aplica a los nuevos nacimientos. El hambre, la vejez, los ataques y el ambiente pueden seguir extinguiendo especies; las extintas no se repueblan automáticamente.
+Para autorizar una nueva cría de carnívoro debe haber **12 herbívoros vivos por cada carnívoro**, contando también esa cría y las otras crías de carnívoros ya aprobadas durante el mismo paso. Es una regla de equilibrio para espaciar el crecimiento cuando faltan presas; no elimina cazadores existentes ni repuebla especies. El inspector indica **Espera presas** cuando esa es la condición pendiente. Mientras espera, el progenitor sigue gastando energía y envejeciendo. Los cadáveres permiten alimentarse, pero no sustituyen una población de presas para este permiso. El cálculo se comparte entre los carnívoros listos, con un único recuento de población por paso cuando hace falta.
+
+El inspector muestra el intervalo y si el individuo espera tiempo, madurez, energía, salud o presas. Las partidas guardadas conservan sus genes, reservas y tiempo pendiente al cargar; el beneficio de energía se aplica a los nuevos nacimientos. El hambre, la vejez, los ataques y el ambiente pueden seguir extinguiendo especies; las extintas no se repueblan automáticamente.
 
 Al cargar una partida anterior, el intervalo completo de los carnívoros se calcula con la fórmula actual. La cuenta que ya estaba en marcha se conserva; el próximo nacimiento inicia la espera duplicada.
+
+## Vida natural y vejez
+
+Cada individuo dispone de **al menos cinco intervalos de reproducción después de madurar**. En segundos de simulación, su límite natural es el mayor entre la longevidad base por tamaño y metabolismo y `tiempo de madurez + 5 × intervalo de cría`. Se conserva la longevidad base de quienes ya vivían más. Por ejemplo, un carnívoro con fertilidad 10, cuyo intervalo es 260 s, dispone de al menos 1.300 s de vida adulta, además de su juventud. Es tiempo para oportunidades de cría: siguen siendo necesarias comida, salud, madurez y fertilidad.
+
+El metabolismo conserva su reloj biológico y su efecto sobre la madurez. La vida y la espera de cría se convierten al mismo reloj antes de compararlas. La ficha muestra **Edad / límite natural** y una barra de **Vida restante**, siempre en segundos de simulación. El último 20% se marca como **Vejez próxima**. La velocidad de juego acelera ambos relojes por igual.
+
+Al alcanzar el límite natural, el individuo muere por vejez, incluso con reservas y salud altas o dentro de un refugio. El hambre, los ataques, las toxinas y el ambiente pueden matarlo antes. Si muere el individuo observado, la ficha muestra la causa inmediata y detiene el seguimiento; el aviso se limpia al elegir otro habitante. Se conserva un único aviso de la selección, sin historial de muertes ni cálculos globales adicionales.
+
+Las partidas anteriores conservan su edad acumulada, genes, salud, energía, imágenes y cuenta de cría pendiente. Al cargar se calcula el nuevo límite, sin reiniciar la edad ni rellenar reservas. La edad mostrada se convierte a segundos de simulación; la edad biológica guardada se conserva para mantener la compatibilidad.
 
 ## Rasgos y evolución
 
@@ -108,7 +120,7 @@ Cada individuo tiene genes propios. La población inicial ya contiene variación
 | Defensa | Reduce el daño físico y la velocidad de consumo de una planta. | Mantenimiento y menor agilidad. |
 | Percepción | Detectar alimento y amenazas más lejos; en productores mejora la captación de nutrientes. | Mantenimiento; el alcance de los animales está acotado. |
 | Fertilidad | Menor espera entre crías; en animales determina un intervalo fijo. | Mantenimiento y reservas pagadas por cada cría; cero implica esterilidad. Los animales reciben la ayuda divina. |
-| Metabolismo | Mayor actividad, digestión y fotosíntesis. | Más gasto y demanda de oxígeno, envejecimiento más rápido. |
+| Metabolismo | Mayor actividad, digestión y fotosíntesis; madurez más rápida. | Más gasto y demanda de oxígeno. La longevidad respeta los cinco intervalos adultos. |
 | Eficiencia | Aprovechar mejor el alimento o la luz. | Mantener ese sistema cuesta energía. No crea comida adicional en la presa. |
 | Toxicidad | Disuade a consumidores, reduce su aprovechamiento y los envenena al comer. | Fabricar toxinas cuesta energía; no protege de contaminación. |
 

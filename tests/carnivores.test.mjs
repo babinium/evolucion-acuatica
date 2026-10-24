@@ -11,7 +11,9 @@ function family({fertility=10,type='carnivore'}={}) {
     rebuildSpeciesIndex();window.parent=spawnCreature(state.species[0],500,500,1);
     window.parent.age=100;window.parent.cooldown=0;window.parent.hungry=false;
     window.parent.energy=window.parent.maxEnergy*0.75;window.parent.health=window.parent.maxHealth*0.55;
-    animalThink=()=>{};rebuildSpatialIndexes();Math.random=()=>0.999999;`);
+    animalThink=()=>{};rebuildSpatialIndexes();Math.random=()=>0.999999;
+    // Isolate the birth clock and reserves; brood-food policy has separate tests.
+    preySupportsBrood=()=>true;`);
   return game;
 }
 

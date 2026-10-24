@@ -110,6 +110,7 @@ test('weather baseline survives saving, manual changes, and legacy saves without
 
 for(const sample of [
   {name:'medium',profile:10001,seed:42,size:3600,counts:[2,2,2]},
+  {name:'medium with scarce prey',profile:10002,seed:2026,size:3600,counts:[2,2,2],retainHunters:true},
   {name:'large',profile:11002,seed:7,size:7200,counts:[4,4,4]}
 ])test(`an unseen ${sample.name} food web renews animals beyond the founders without rescue`,()=>{
   const game=createGame({seed:sample.seed});
@@ -129,6 +130,7 @@ for(const sample of [
       finite:state.creatures.every(c=>[c.x,c.y,c.health,c.energy,...Object.values(c.genes)].every(Number.isFinite))};
   })()`);
   assert.ok(result.counts.producer>0 && result.counts.herbivore>0);
+  if(sample.retainHunters)assert.ok(result.counts.carnivore>0);
   assert.ok(result.lateAnimalBirths>0 && result.generation>=3);
   assert.ok(result.bounded && result.finite);
 });
