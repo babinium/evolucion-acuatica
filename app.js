@@ -278,6 +278,7 @@ function normalizeSpecies(raw = {}) {
   if (rawClass === "herbivore") traits.attack = 0;
   return {
     id,
+    bookKey: /^darwin-[a-f0-9]{16}$/.test(raw.bookKey) ? raw.bookKey : DarwinCore.keyFor({class:rawClass,name:raw.name || "Especie sin nombre",visualDescription:raw.visualDescription || ""}),
     ...lineageFields(raw,id),
     parentId: raw.parentId || null,
     name: String(raw.name || "Especie sin nombre").slice(0, 70),
@@ -426,6 +427,7 @@ function seedWorld(speciesList,{balancedFounders=false}={}) {
   updateSpeciesList();
   invalidate();
   updateSelection();
+  for(const sp of state.species)queueBookSpecies(sp);
 }
 
 function restartCurrentWorld() {
@@ -481,8 +483,23 @@ async function startWorld(useAI, withImages = true) {
   const setupStatus = document.getElementById("setupStatus");
 
   if (!useAI) {
-    state.evolutionAiEnabled=false;state.evolutionAiBlocked="";
-    seedWorld(balanceInitialSpecies(fallbackSpecies(producers, herbivores, carnivores)),{balancedFounders:true});
+    worldStarting=true;
+    const startButton=document.getElementById('startLocal'),label=startButton.innerHTML;
+    startButton.disabled=true;startButton.textContent='Preparando mundo…';syncBookSelection();
+    setupStatus.textContent='Preparando habitantes del libro, sin llamadas a la IA…';
+    try {
+      const counts={producer:producers,herbivore:herbivores,carnivore:carnivores};
+      const species=document.getElementById('setupSpeciesSource').value==='book' ? await bookEntriesForWorld(counts) : [];
+      const missing=type=>Math.max(0,counts[type]-species.filter(sp=>sp.class===type).length);
+      species.push(...fallbackSpecies(missing('producer'),missing('herbivore'),missing('carnivore')));
+      state.evolutionAiEnabled=false;state.evolutionAiBlocked="";
+      seedWorld(balanceInitialSpecies(species),{balancedFounders:true});
+    } catch(error) {
+      const message=`No se pudo preparar el mundo: ${error.message}`;setupStatus.textContent=message;
+      if(document.getElementById('darwinBook').open)darwinMessage(message);
+      else showBusyError('No se pudo crear el mundo',message);
+    }
+    finally {worldStarting=false;startButton.disabled=false;startButton.innerHTML=label;syncBookSelection();}
     return;
   }
 
@@ -826,7 +843,7 @@ function getSprite(species) {
     } catch { entry.ready = false; }
     invalidate();
   };
-  img.crossOrigin = "anonymous";
+  if(location.protocol!=='file:')img.crossOrigin = "anonymous";
   img.onerror = () => { entry.ready = false; };
   img.src = species.spriteUrl;
   return entry;
@@ -909,6 +926,10 @@ function updateHud() {
 function loop(ts) {
   frameRequest = 0;
   if (document.hidden) return;
+  if(document.getElementById('darwinBook').open) {
+    lastTs=ts;simulationAccumulator=0;
+    frameRequest=requestAnimationFrame(loop);return;
+  }
   const interval = 1000 / performancePresets[quality].fps;
   if (lastFrameTs && ts - lastFrameTs < interval - 0.5) {
     frameRequest = requestAnimationFrame(loop);
@@ -965,7 +986,9 @@ function escapeHtml(value) {
 }
 
 function safeImageUrl(value) {
-  return /^(https?:\/\/|data:image\/(png|jpeg|webp);base64,)/i.test(value || "") ? escapeHtml(value) : "";
+  const safe=/^(https?:\/\/|data:image\/(png|jpeg|webp);base64,)/i.test(value || "")
+    || /^assets\/darwin\/[a-z0-9-]+-(?:sprite|portrait)\.png$/.test(value || "");
+  return safe ? escapeHtml(value) : "";
 }
 
 let selectionKey = null;
@@ -1203,6 +1226,7 @@ window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") { event.preventDefault(); portraitViewer.close(); }
     return;
   }
+  if(document.getElementById('darwinBook').open)return;
   if (event.key === "Escape") {
     if(state.followSelected)setFollowSelected(false);
     cancelTool();
@@ -1274,6 +1298,8 @@ document.getElementById("dockCancelTool").addEventListener("click", () => cancel
 
 function saveWorld() {
   if (!state.started) return;
+  for(const sp of state.species)queueBookSpecies(sp);
+  flushDarwinBook();
   const snapshot = packArtwork({ ...state, selected: null, selectedId: state.selected?.id || null, activeTool: null });
   state.lastEvent = remember("evo-save", JSON.stringify(snapshot))
     ? "Partida guardada en este navegador" : "No se pudo guardar: no queda espacio en el navegador.";
@@ -1330,6 +1356,7 @@ function loadWorld() {
     document.getElementById("setup").classList.add("hidden");
     document.getElementById("app").classList.add("playing");
     state.lastEvent = "Partida cargada";
+    for(const sp of state.species)queueBookSpecies(sp);
     syncPauseButton(); syncEnvControls(); syncEvolutionControls(); updateSelection(); updateSpeciesList(); updateHud(); invalidate();
     if(state.followSelected)revealSelection();
   } catch (error) {
@@ -1342,7 +1369,7 @@ document.getElementById("saveBtn").addEventListener("click", saveWorld);
 document.getElementById("loadBtn").addEventListener("click", loadWorld);
 document.getElementById("setupLoad").addEventListener("click", loadWorld);
 document.getElementById("resetBtn").addEventListener("click", restartCurrentWorld);
-document.getElementById("newWorldBtn").addEventListener("click", () => location.reload());
+document.getElementById("newWorldBtn").addEventListener("click", async () => {await flushDarwinBook();location.reload();});
 
 for (const input of [document.getElementById("setupProducers"), document.getElementById("setupHerbivores"), document.getElementById("setupCarnivores")]) {
   input.addEventListener("blur", () => {
@@ -1422,6 +1449,7 @@ async function createManual(withImages) {
     }
     state.species.push(sp);
     speciesById.set(sp.id, sp);
+    queueBookSpecies(sp);
     state.manualSpeciesCreated = (state.manualSpeciesCreated || 0) + 1;
     updateManualSpeciesCounter();
     const p = screenToWorld(innerWidth / 2, innerHeight / 2);
@@ -1543,5 +1571,6 @@ updateManualSpeciesCounter();
 initEnvironment();
 syncToolUI();
 setQuality(quality);
+initDarwinBook();
 loadConfigStatus();
 frameRequest = requestAnimationFrame(loop);

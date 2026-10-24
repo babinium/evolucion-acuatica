@@ -20,7 +20,8 @@ export function createGame({ baseline = false, seed = 123456, ref, fetch: fetchI
       toDataURL: () => 'data:image/png;base64,' + Buffer.from(id).toString('base64'),
       getBoundingClientRect: () => ({top:0,left:0,width:200,height:400}),
       addEventListener(name, fn) {listeners.set(`${id}:${name}`, fn);},
-      appendChild(child) {this.children.push(child);}, setAttribute() {}, removeAttribute() {}, focus() {}, closest() {return null;}, querySelectorAll() {return [];}, querySelector() {return element(`${id}:child`);}
+      appendChild(child) {this.children.push(child);}, setAttribute() {}, removeAttribute() {}, focus() {}, closest() {return null;}, querySelectorAll() {return [];}, querySelector() {return element(`${id}:child`);},
+      open:false,showModal(){this.open=true;},close(){if(!this.open)return;this.open=false;listeners.get(`${id}:close`)?.({});}
     };
     elements.set(id, el);
     return el;
@@ -44,7 +45,7 @@ export function createGame({ baseline = false, seed = 123456, ref, fetch: fetchI
   };`, context);
   const readSource = file => ref ? execFileSync('git', ['show', `${ref}:${file}`], {encoding: 'utf8', stdio:['ignore','pipe','ignore']}) : fs.readFileSync(file, 'utf8');
   const sources = [];
-  if (!baseline) for (const file of ['spatial-grid.js', 'ecology.js', 'world-rules.js', 'powers.js', 'sprite-tools.js','evolution.js']) {
+  if (!baseline) for (const file of ['darwin-core.js','darwin-data.js','darwin-vault.js','darwin-ui.js','spatial-grid.js', 'ecology.js', 'world-rules.js', 'powers.js', 'sprite-tools.js','evolution.js']) {
     try { sources.push(readSource(file)); } catch (error) { if (!ref) throw error; }
   }
   sources.push(baseline ? execFileSync('git', ['show', 'origin/main:app.js'], {encoding: 'utf8'}) : readSource('app.js'));
