@@ -45,6 +45,7 @@ const state = {
   chaos: 0.55,
   mutationRate: 0.09,
   selected: null,
+  followSelected: false,
   activeTool: null,
   toolRadius: 210,
   mouse: { x: 0, y: 0, worldX: 0, worldY: 0 },
@@ -73,9 +74,7 @@ const creatureGrid = new SpatialGrid();
 const resourceGrid = new SpatialGrid();
 const corpseGrid = new SpatialGrid();
 const classGrids = { producer: new SpatialGrid(), herbivore: new SpatialGrid(), carnivore: new SpatialGrid() };
-const animalGrid = new SpatialGrid();
 const proceduralSprites = new Map();
-const quadrantCounts = new Map();
 const MAX_RESOURCES = 2400;
 const MAX_CREATURES = 2400;
 const MAX_CORPSES = 1200;
@@ -107,29 +106,18 @@ function rebuildSpeciesIndex() {
   for (const sp of state.species) speciesById.set(sp.id, sp);
 }
 
-function quadrantKey(x, y, speciesId) {
-  const cell = state.worldSize / 4;
-  const qx = Math.floor(clamp(x, 0, state.worldSize - 1) / cell);
-  const qy = Math.floor(clamp(y, 0, state.worldSize - 1) / cell);
-  return `${speciesId}:${qx + qy * 4}`;
-}
-
 function rebuildSpatialIndexes() {
   creatureGrid.rebuild(state.creatures);
   resourceGrid.rebuild(state.resources);
   corpseGrid.rebuild(state.corpses);
-  for (const grid of [...Object.values(classGrids), animalGrid]) {
+  for (const grid of Object.values(classGrids)) {
     for (const bucket of grid.cells.values()) bucket.length = 0;
   }
-  quadrantCounts.clear();
   if (state.habitats) for (const h of state.habitats) h.cover = 0;
   for (const c of state.creatures) {
     const type = getSpecies(c)?.class;
     if (type === "producer" && c.health > 0 && state.habitats) state.habitats[cellIndex(c)].cover += c.size * 0.035;
     if (classGrids[type]) classGrids[type].insert(c);
-    if (type && type !== "producer") animalGrid.insert(c);
-    const key = quadrantKey(c.x, c.y, c.speciesId);
-    quadrantCounts.set(key, (quadrantCounts.get(key) || 0) + 1);
   }
 }
 
@@ -390,6 +378,7 @@ function seedWorld(speciesList,{balancedFounders=false}={}) {
   selectionKey = null;
   speciesListSignature = "";
   state.selected = null;
+  state.followSelected = false;
   state.nextCreatureId = 1;
   state.nextSpeciesId = state.species.length + 1;
   state.manualSpeciesCreated = 0;
@@ -561,7 +550,7 @@ function getSpecies(creature) {
 function update(dt) {
   if (!state.started) return;
   updateCamera(dt);
-  if (state.paused) return;
+  if (state.paused) { updateFollowCamera(); return; }
   const simDt = dt * state.speed;
   // Keep the ecological step as small as at 5x; 10x needs two bounded steps.
   const steps = Math.max(1, Math.ceil(simDt / MAX_ECOLOGY_STEP));
@@ -576,17 +565,53 @@ function update(dt) {
     updateCreatures(stepDt);
     recalcSpecies();
   }
+  updateFollowCamera();
+}
+
+function livingSelection() {
+  const c=state.selected;
+  return c && c.health>0 && c.energy>-35 && state.creatures.includes(c) ? c : null;
+}
+
+function syncFollowControls() {
+  const c=livingSelection(),button=document.getElementById("followSelectedBtn");
+  button.disabled=!c;
+  button.setAttribute("aria-pressed",String(state.followSelected));
+  button.title=c ? `${state.followSelected ? 'Dejar de seguir' : 'Seguir'} al individuo #${c.id} (F)`
+    : "Seleccioná un individuo para seguirlo (F)";
+  setText("followSelectedLabel",state.followSelected ? "Siguiendo" : "Seguir");
+}
+
+function setFollowSelected(enabled) {
+  const wasFollowing=state.followSelected;
+  state.followSelected=Boolean(enabled && state.started && livingSelection());
+  if(state.followSelected) {
+    if(state.activeTool)cancelTool();
+    updateFollowCamera();
+  }
+  syncFollowControls();
+  if(wasFollowing!==state.followSelected)invalidate();
+}
+
+function updateFollowCamera() {
+  if(!state.followSelected)return;
+  const c=livingSelection();
+  if(!c) { setFollowSelected(false); return; }
+  if(state.camera.x!==c.x || state.camera.y!==c.y) {
+    state.camera.x=c.x;state.camera.y=c.y;invalidate();
+  }
 }
 
 function updateCamera(dt) {
   const pan = 520 * dt / Math.max(0.5, state.camera.zoom);
-  if (keys.has("w") || keys.has("arrowup")) state.camera.y -= pan;
-  if (keys.has("s") || keys.has("arrowdown")) state.camera.y += pan;
-  if (keys.has("a") || keys.has("arrowleft")) state.camera.x -= pan;
-  if (keys.has("d") || keys.has("arrowright")) state.camera.x += pan;
+  const dx=Number(keys.has("d") || keys.has("arrowright"))-Number(keys.has("a") || keys.has("arrowleft"));
+  const dy=Number(keys.has("s") || keys.has("arrowdown"))-Number(keys.has("w") || keys.has("arrowup"));
+  if(dx || dy) {
+    if(state.followSelected)setFollowSelected(false);
+    state.camera.x+=dx*pan;state.camera.y+=dy*pan;invalidate();
+  }
   state.camera.x = clamp(state.camera.x, 0, state.worldSize);
   state.camera.y = clamp(state.camera.y, 0, state.worldSize);
-  if (keys.size) invalidate();
 }
 
 function render() {
@@ -947,13 +972,15 @@ function updateSelection() {
   const panel = document.getElementById("selectionPanel");
   const empty = document.getElementById("selectionEmpty");
   const c = state.selected;
-  if (!c || !state.creatures.includes(c)) {
+  if (!livingSelection()) {
     state.selected = null;
+    setFollowSelected(false);
     selectionKey = null;
     panel.classList.add("hidden");
     empty.classList.remove("hidden");
     return;
   }
+  updateFollowCamera();syncFollowControls();
   const sp = getSpecies(c);
   if (!sp) return;
   const identity = speciesById.get(sp.identityId) || sp;
@@ -1090,8 +1117,11 @@ window.addEventListener("pointermove", (event) => {
   const dx = event.clientX - lastMouse.x;
   const dy = event.clientY - lastMouse.y;
   dragDistance += Math.abs(dx) + Math.abs(dy);
-  state.camera.x -= dx / state.camera.zoom;
-  state.camera.y -= dy / state.camera.zoom;
+  if(dragDistance>5) {
+    if(state.followSelected)setFollowSelected(false);
+    state.camera.x -= dx / state.camera.zoom;
+    state.camera.y -= dy / state.camera.zoom;
+  }
   lastMouse = { x: event.clientX, y: event.clientY };
 });
 
@@ -1134,6 +1164,10 @@ canvas.addEventListener("wheel", (event) => {
     setToolRadius(state.toolRadius + direction * 20);
     return;
   }
+  if(state.followSelected) {
+    zoomCamera(event.deltaY>0 ? 0.88 : 1.14);
+    return;
+  }
   const before = screenToWorld(event.clientX, event.clientY);
   state.camera.zoom = clamp(state.camera.zoom * (event.deltaY > 0 ? 0.88 : 1.14), 0.16, 2.2);
   const after = screenToWorld(event.clientX, event.clientY);
@@ -1149,6 +1183,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key === "Escape") {
+    if(state.followSelected)setFollowSelected(false);
     cancelTool();
     const modal = document.getElementById("modal");
     if (!modal.classList.contains("hidden")) {
@@ -1159,6 +1194,10 @@ window.addEventListener("keydown", (event) => {
     invalidate(); return;
   }
   if (event.target?.closest("input, textarea, select") || event.ctrlKey || event.metaKey || event.altKey) return;
+  if(event.key.toLowerCase()==="f" && state.started) {
+    if(!event.repeat) { event.preventDefault();setFollowSelected(!state.followSelected); }
+    return;
+  }
   const power = Object.entries(toolDefs).find(([, def]) => def.shortcut === event.key);
   if (power && !event.repeat) { event.preventDefault(); selectTool(power[0]); return; }
   if (state.activeTool && ["[", "]"].includes(event.key)) {
@@ -1247,7 +1286,7 @@ function loadWorld() {
     const selectedId = saved.selectedId ?? saved.selected?.id;
     const legacy = saved.ecologyVersion !== ECOLOGY_VERSION;
     resetEvolutionWork();
-    Object.assign(state, saved, { started: true, activeTool: null,
+    Object.assign(state, saved, { started: true, activeTool: null, followSelected: false,
       envBaseline: {...(saved.envBaseline || saved.envTarget)},
       evolutionAiEnabled: typeof saved.evolutionAiEnabled==="boolean" ? saved.evolutionAiEnabled
         : saved.species.some(sp=>sp.artworkVersion===1 && sp.portraitUrl),
@@ -1264,11 +1303,13 @@ function loadWorld() {
     state.nextCreatureId = Math.max(state.nextCreatureId || 1, ...state.creatures.map(c => c.id + 1));
     spriteCache.clear(); proceduralSprites.clear(); selectionKey = null; speciesListSignature = "";
     rebuildSpeciesIndex(); migrateEcology(legacy); rebuildSpatialIndexes(); recalcSpecies();
+    setFollowSelected(saved.followSelected===true);
     simulationAccumulator = 0;
     document.getElementById("setup").classList.add("hidden");
     document.getElementById("app").classList.add("playing");
     state.lastEvent = "Partida cargada";
     syncPauseButton(); syncEnvControls(); syncEvolutionControls(); updateSelection(); updateSpeciesList(); updateHud(); invalidate();
+    if(state.followSelected)revealSelection();
   } catch (error) {
     document.getElementById("setupStatus").textContent = `No se pudo cargar: ${error.message}`;
     state.lastEvent = "No se pudo cargar la partida guardada.";
@@ -1394,7 +1435,9 @@ function zoomCamera(multiplier) {
 document.getElementById("qualitySelect").addEventListener("change", event => setQuality(event.target.value));
 document.getElementById("zoomIn").addEventListener("click", () => zoomCamera(1.2));
 document.getElementById("zoomOut").addEventListener("click", () => zoomCamera(1 / 1.2));
+document.getElementById("followSelectedBtn").addEventListener("click", () => setFollowSelected(!state.followSelected));
 document.getElementById("centerCamera").addEventListener("click", () => {
+  setFollowSelected(false);
   state.camera.x = state.worldSize / 2;
   state.camera.y = state.worldSize / 2;
   state.camera.zoom = clamp(Math.min(innerWidth, innerHeight) * 0.8 / state.worldSize, 0.16, 0.6);
