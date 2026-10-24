@@ -2,7 +2,7 @@
 
 Un simulador de evolución con vista de dios: productores, herbívoros, depredadores, mutaciones e intervenciones. HTML, CSS y JavaScript con canvas, sin dependencias ni compilación.
 
-**Versión estable: [1.8.0](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.8.0).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
+**Versión estable: [1.8.1](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.8.1).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
 
 ## Jugar
 
@@ -84,7 +84,7 @@ Los productores necesitan madurez, salud, reservas y espacio local para reproduc
 
 Desde el menú inicial, **Libro de Darwin** abre una pantalla dedicada a la colección. También se puede abrir durante una partida; el mundo se pausa mientras se consulta el libro y recupera su estado de pausa al volver. No se inician generaciones de IA al consultar la colección. Una petición enviada previamente puede terminar.
 
-Se incluyen **29 especies ilustradas** (6 productores, 12 herbívoros y 11 carnívoros), con nombres, descripciones y rasgos, en `darwin-data.js` y `assets/darwin/`. Las ilustraciones existentes se reutilizaron, sin generar otras. Las 58 imágenes PNG transparentes suman unos 3,5 MiB: 192 × 192 para el mapa y 384 × 384 para las fichas. Cada copia descargada de GitHub y GitHub Pages trae esa colección sin necesitar clave ni saldo.
+Se incluyen **47 especies con imágenes** (10 productores, 19 herbívoros y 18 carnívoros), con nombres, descripciones y rasgos, en `darwin-data.js` y `assets/darwin/`. La colección conserva las 44 especies exportadas del navegador principal y tres dibujos locales recuperados del navegador integrado, incluidas las 29 que ya traía el juego. Las ilustraciones existentes se reutilizaron, sin generar otras. Las 94 imágenes PNG transparentes suman unos 5,4 MiB: 192 × 192 para el mapa y 384 × 384 para las fichas. Cada copia descargada de GitHub y GitHub Pages trae esa colección sin necesitar clave ni saldo.
 
 La galería permite buscar por nombre, hábitat o descripción, filtrar por dieta y distinguir las especies incluidas de los descubrimientos de este navegador. Cada ficha tiene una ilustración grande, ampliable con clic, descripción, alimentación, hábitat, ascendencia y rasgos. Se muestran como máximo 24 tarjetas por página y solo se leen las imágenes necesarias; no se recorta ni dibuja la colección en el bucle de simulación.
 
@@ -101,7 +101,7 @@ node scripts/import-darwin.mjs libro-de-darwin.json --check
 node scripts/import-darwin.mjs libro-de-darwin.json
 ```
 
-El script valida PNG preparados, combina las especies con las ya incluidas y escribe únicamente el catálogo y sus imágenes, sin leer configuración ni usar red. Los cambios se revisan y publican con el código del juego. Se conserva la colección incluida en una instalación aunque el almacenamiento del navegador esté bloqueado.
+El script valida PNG preparados, combina las especies con las ya incluidas y escribe únicamente el catálogo y sus imágenes, sin leer configuración ni usar red. Conserva cada identidad por su clave: dos especies con el mismo nombre y distinta apariencia no se descartan como duplicados. Los cambios se revisan y publican con el código del juego. Se conserva la colección incluida en una instalación aunque el almacenamiento del navegador esté bloqueado. Las especies descubiertas después de una publicación necesitan una nueva exportación para incorporarlas a GitHub; la caché temporal de generación no sustituye ese respaldo.
 
 ## Ayuda divina a los animales
 
