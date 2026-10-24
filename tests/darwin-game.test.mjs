@@ -7,14 +7,17 @@ import {createGame} from './harness.mjs';
 const ctx=vm.createContext({});vm.runInContext(fs.readFileSync('darwin-data.js','utf8')+';globalThis.starter=DARWIN_STARTER',ctx);
 
 test('the shipped collection contains at least four illustrated species of each diet with bounded local PNGs',()=>{
- const entries=ctx.starter;assert.equal(entries.length,29);let bytes=0;
+ const entries=ctx.starter;assert.ok(entries.length>=47);let bytes=0;
+ assert.equal(new Set(entries.map(e=>e.bookKey)).size,entries.length);
  for(const type of ['producer','herbivore','carnivore'])assert.ok(entries.filter(e=>e.class===type).length>=4);
  for(const e of entries)for(const [field,size] of [['spriteUrl',192],['portraitUrl',384]]){
   assert.match(e[field],/^assets\/darwin\/darwin-[a-f0-9]{16}-(sprite|portrait)\.png$/);
   const b=fs.readFileSync(e[field]);assert.equal(b.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
   assert.equal(b.readUInt32BE(16),size);assert.equal(b.readUInt32BE(20),size);bytes+=b.length;
  }
- assert.ok(bytes<5*1024*1024);
+ // The collection grows with discoveries; bound artwork cost per entry rather
+ // than forcing older species out to fit a fixed catalogue-wide budget.
+ assert.ok(bytes<entries.length*192*1024);
 });
 
 test('a new installation can start an illustrated world from the book without generation calls',async()=>{
