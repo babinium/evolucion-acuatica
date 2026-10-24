@@ -44,7 +44,7 @@ export function createGame({ baseline = false, seed = 123456, ref, fetch: fetchI
   };`, context);
   const readSource = file => ref ? execFileSync('git', ['show', `${ref}:${file}`], {encoding: 'utf8', stdio:['ignore','pipe','ignore']}) : fs.readFileSync(file, 'utf8');
   const sources = [];
-  if (!baseline) for (const file of ['spatial-grid.js', 'ecology.js', 'powers.js', 'sprite-tools.js','evolution.js']) {
+  if (!baseline) for (const file of ['spatial-grid.js', 'ecology.js', 'world-rules.js', 'powers.js', 'sprite-tools.js','evolution.js']) {
     try { sources.push(readSource(file)); } catch (error) { if (!ref) throw error; }
   }
   sources.push(baseline ? execFileSync('git', ['show', 'origin/main:app.js'], {encoding: 'utf8'}) : readSource('app.js'));

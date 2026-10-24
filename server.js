@@ -461,7 +461,7 @@ async function serveStatic(req, res) {
       res.writeHead(403);res.end('Forbidden');return;
     }
     const content = await readFile(actual);
-    res.writeHead(200, { "Content-Type": mime[extname(target)] || "application/octet-stream" });
+    res.writeHead(200, { "Content-Type": mime[extname(target)] || "application/octet-stream", "Cache-Control": "no-cache" });
     res.end(content);
   } catch {
     res.writeHead(404);
