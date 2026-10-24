@@ -1520,7 +1520,7 @@ h1 em {
   }
 }
 
-@media(min-width:901px) and (max-width:1200px) {
+@media(min-width:901px) and (max-width:1280px) {
   .camera-hint {
     bottom: 151px;
   }
