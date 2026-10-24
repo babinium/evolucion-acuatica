@@ -52,6 +52,31 @@ test('fertility sets the interval, zero is sterile and immature newborns cannot 
   assert.equal(fast.run('state.creatures.length'),2);
 });
 
+test('carnivore fertility takes twice the former seconds without slowing other diets',()=>{
+  const game=createGame();
+  for(const [fertility,seconds] of [[5,330],[10,260],[15,190],[20,120]]) {
+    assert.equal(game.run(`phenotype(sanitizeGenes({fertility:${fertility}},'carnivore'),'carnivore').birthWait`),seconds);
+  }
+  assert.equal(game.run("phenotype(sanitizeGenes({fertility:10},'herbivore'),'herbivore').birthWait"),52.5);
+  assert.equal(game.run("phenotype(sanitizeGenes({fertility:15},'producer'),'producer').birthWait"),52.5);
+});
+
+test('a fed carnivore waits 260 simulation seconds at fertility 10 between actual births',()=>{
+  const game=family();
+  const result=game.run(`(()=>{
+    const p=window.parent,spawn=spawnCreature;let births=0;
+    spawnCreature=(...args)=>{if(args[3]===p.generation+1)births++;return spawn(...args);};
+    const children=()=>births;updateCreatures(0);
+    const first=children();
+    // Isolate the fertility clock from starvation, injury and aging.
+    const step=()=>{p.energy=p.maxEnergy;p.health=p.maxHealth;p.age=bodyOf(p).maturity+1;updateCreatures(1);};
+    for(let i=0;i<130;i++)step();const halfway=children(),remaining=p.cooldown;
+    for(let i=0;i<130;i++)step();
+    return {first,halfway,remaining,second:children(),reset:p.cooldown};
+  })()`);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:1,halfway:1,remaining:130,second:2,reset:260});
+});
+
 test('vegetation does not sterilize a fed herbivore and its offspring receive the divine reserve',()=>{
   const game=createGame();
   const result=game.run(`(()=>{
@@ -154,9 +179,10 @@ test('saving a hungry parent preserves energy, cooldown, parentage and the new b
   const result=game.run(`(()=>{updateCreatures(0);const child=state.creatures[1];state.selected=child;
     window.parent.cooldown=37;saveWorld();loadWorld();const p=state.creatures.find(c=>c.id===window.parent.id);
     return {energy:p.energy/p.maxEnergy,cooldown:p.cooldown,newborn:state.selected.energy/state.selected.maxEnergy,
-      parent:state.selected.parentCreatureId===p.id,cost:bodyOf(p).birthCost/p.maxEnergy};})()`);
+      parent:state.selected.parentCreatureId===p.id,cost:bodyOf(p).birthCost/p.maxEnergy,wait:bodyOf(p).birthWait};})()`);
   assert.equal(result.energy,0.5);assert.equal(result.cooldown,37);assert.equal(result.newborn,0.75);
   assert.ok(result.parent);assert.equal(result.cost,0.25);
+  assert.equal(result.wait,260);
 });
 
 test('the divine reserve is based on the newborn capacity even after a size mutation',()=>{
