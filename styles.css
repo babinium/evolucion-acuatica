@@ -1275,6 +1275,19 @@ h1 em {
   height: 17px;
 }
 
+.map-controls .follow-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 5px;
+}
+
+.map-controls .follow-control[aria-pressed="true"] {
+  color: var(--accent);
+  background: #24443f;
+  box-shadow: inset 0 0 0 1px #6ab69b;
+}
+
 .camera-hint {
   position: fixed;
   bottom: 108px;
@@ -1504,6 +1517,12 @@ h1 em {
   }
   .setup-caption {
     margin-top: 14px;
+  }
+}
+
+@media(min-width:901px) and (max-width:1200px) {
+  .camera-hint {
+    bottom: 151px;
   }
 }
 

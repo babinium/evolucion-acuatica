@@ -56,15 +56,16 @@ test('spatial searches match brute force near edges and after crossing a cell', 
   })()`), true);
 });
 
-test('spatial reproduction counts track quadrant crossings', () => {
+test('feeding and power searches follow swimmers after crossing a spatial cell', () => {
   const game = createGame();
   assert.equal(game.run(`(() => {
     seedWorld(fallbackSpecies(1,1,1));
-    for (let i=0;i<12;i++) update(1/30);
-    return state.creatures.every(c => {
-      const expected = state.creatures.filter(o => o.speciesId === c.speciesId && quadrantKey(o.x,o.y,o.speciesId) === quadrantKey(c.x,c.y,c.speciesId)).length;
-      return sameSpeciesInQuadrant(c) === expected;
-    });
+    const c=state.creatures.find(c=>getSpecies(c).class==='herbivore');
+    c.x=255;c.y=500;c.vx=2;c.vy=0;animalThink=()=>{};rebuildSpatialIndexes();
+    update(1/30);
+    return c.x>256 && ![...classGrids.herbivore.query(255,500,0.1)].includes(c)
+      && [...classGrids.herbivore.query(c.x,c.y,0.1)].includes(c)
+      && powerTargets(c.x,c.y,0.1).includes(c);
   })()`), true);
 });
 

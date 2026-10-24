@@ -138,6 +138,7 @@ function syncToolUI(message) {
 function selectTool(id) {
   if (!state.started || !toolDefs[id]) return;
   if (state.activeTool === id) { cancelTool(); return; }
+  setFollowSelected(false);
   state.activeTool = id;
   state.toolRadius = toolRadii[id];
   if (id === "favor" && state.selected && getSpecies(state.selected)?.population > 0) favorSpeciesId = state.selected.speciesId;

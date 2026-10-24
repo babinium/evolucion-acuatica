@@ -1,9 +1,12 @@
 import { createGame } from '../tests/harness.mjs';
 
 const compare = process.argv.find(arg => arg.startsWith("--compare="))?.slice(10);
+const rounds = Math.max(1, Math.min(5, Math.floor(Number(process.argv.find(arg => arg.startsWith("--rounds="))?.slice(9)) || 1)));
 const versions = compare ? [{ref: compare, label: compare}, {label: "optimized"}]
   : (process.argv.includes("--optimized-only") ? [{label:"optimized"}] : [{ref:"origin/main",label:"stable"},{label:"optimized"}]);
-for (const {baseline = false, ref, label} of versions) {
+for (let round=0;round<rounds;round++) for (const {baseline = false, ref, label} of round%2 ? [...versions].reverse() : versions) {
+  // Optional --expose-gc keeps discarded test worlds out of the next sample.
+  global.gc?.();
   const game = createGame({baseline, ref});
   game.run(`
     state.worldSize = 5200;
@@ -18,12 +21,12 @@ for (const {baseline = false, ref, label} of versions) {
   `);
   const times = game.run(`(() => {
     const times = [];
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 140; i++) {
       const start = performance.now(); update(1 / 30); const elapsed = performance.now() - start;
-      if (i >= 10) times.push(elapsed);
+      if (i >= 50) times.push(elapsed);
     }
     times.sort((a,b) => a-b);
-    return {population: state.creatures.length, medianMs: +times[15].toFixed(2), p95Ms: +times[28].toFixed(2)};
+    return {population: state.creatures.length, medianMs: +times[45].toFixed(2), p95Ms: +times[85].toFixed(2)};
   })()`);
-  console.log(JSON.stringify({version: label, ...times}));
+  console.log(JSON.stringify({round:round+1, version: label, ...times}));
 }

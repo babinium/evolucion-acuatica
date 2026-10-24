@@ -283,12 +283,6 @@ function updateCreatures(dt) {
     }
     creatureGrid.move(c, oldX, oldY);
     classGrids[sp.class].move(c, oldX, oldY);
-    if (sp.class !== "producer") animalGrid.move(c, oldX, oldY);
-    const oldKey = quadrantKey(oldX, oldY, c.speciesId), newKey = quadrantKey(c.x, c.y, c.speciesId);
-    if (oldKey !== newKey) {
-      quadrantCounts.set(oldKey, (quadrantCounts.get(oldKey) || 1) - 1);
-      quadrantCounts.set(newKey, (quadrantCounts.get(newKey) || 0) + 1);
-    }
   }
   for (const item of newborns) {
     const child = spawnCreature(item.species, item.parent.x + rand(-65, 65), item.parent.y + rand(-65, 65), item.parent.generation + 1, item.genes);
@@ -330,8 +324,6 @@ function isCrowdedForReproduction(c, sp) {
   }
   return false;
 }
-
-function sameSpeciesInQuadrant(c) { return quadrantCounts.get(quadrantKey(c.x, c.y, c.speciesId)) || 0; }
 
 function countLivingClasses() {
   const counts = {producer: 0, herbivore: 0, carnivore: 0};

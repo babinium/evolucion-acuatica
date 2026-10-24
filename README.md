@@ -2,7 +2,7 @@
 
 Un simulador de evolución con vista de dios: productores, herbívoros, depredadores, mutaciones e intervenciones. HTML, CSS y JavaScript con canvas, sin dependencias ni compilación.
 
-**Versión estable: [1.4.0](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.4.0).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
+**Versión estable: [1.5.0](https://github.com/babinium/evolucion-acuatica/releases/tag/v1.5.0).** La rama `main` contiene esta versión; la publicación de GitHub permite recuperar su código exacto.
 
 ## Jugar
 
@@ -20,6 +20,7 @@ El modo inicial **Bajo consumo** limita el dibujo a 30 FPS y reduce la resoluci�
 
 - La simulación tiene pasos de 30 Hz independientes de la calidad visual. Si el equipo no alcanza, limita el trabajo de recuperación para que los controles sigan respondiendo.
 - Una grilla espacial busca alimento, amenazas y vecinos por cercanía. Los sentidos de los animales se escalonan unas cinco veces por segundo y su alcance tiene un límite; el movimiento, la alimentación y los ataques siguen avanzando en cada paso. Los cuerpos se calculan al nacer y se reutilizan.
+- Se mantienen únicamente los índices que usan el alimento, las amenazas y los poderes. Se retiraron el índice combinado de animales y los conteos por cuadrante que habían quedado sin uso; no cambian los genes, el alimento ni las reglas de reproducción.
 - Solo 16 zonas actualizan las reservas locales de nutrientes, el oxígeno y las corrientes. No se simulan partículas de agua ni redes neuronales por individuo.
 - Los peces y las plantas locales se dibujan una vez por especie y se reutilizan. Los paneles se actualizan con menor frecuencia y no usan desenfoque de fondo.
 - La pestaña oculta suspende completamente la simulación y el dibujo. Al volver no intenta recuperar todo el tiempo transcurrido. Al pausar, el mapa solo se vuelve a dibujar cuando cambia.
@@ -32,6 +33,7 @@ Para una partida liviana, empezá con un mundo compacto o mediano y una especie 
 - Arrastrar o WASD/flechas: mover la cámara, incluso en pausa.
 - Rueda y botones −/+: acercar o alejar. El botón de mira centra el mundo.
 - Clic en un individuo o en la lista de especies: inspeccionar rasgos y población.
+- **Seguir** en los controles del mapa o **F**: acompañar con la cámara al individuo seleccionado, también en pausa y hasta 10×. El botón cambia a **Siguiendo** mientras está activo. Podés seguir observándolo al acercar o alejar; al arrastrar, moverte con WASD/flechas, centrar el mundo, elegir un poder o pulsar Escape volvés a explorar libremente. Al seleccionar otro individuo, el seguimiento pasa a ese individuo; al morir el observado se detiene. El estado se conserva al guardar y cargar; un mundo nuevo empieza sin seguimiento.
 - Clic en el retrato de la ficha: ampliar la ilustración a tres veces su tamaño, ajustada al espacio disponible y sin consumir API. Clic en cualquier lugar o Escape: cerrar la ampliación.
 - Barra espaciadora: pausar o reanudar. Los controles de velocidad no cambian la velocidad de la cámara.
 - Velocidad de la simulación: los botones − y + de la barra superior cambian de 1× en 1×, entre 1× y 10×. Las velocidades fraccionarias de partidas anteriores se redondean al cargar. A velocidades altas el avance se divide en pasos de hasta 1/6 s para conservar la precisión del movimiento, la alimentación y la reproducción; la cámara mantiene su velocidad habitual.
@@ -181,11 +183,13 @@ node scripts/ecology-audit.mjs --fixture=all --seeds=42,2026 --chaos=0.55 --seco
 node scripts/ecology-audit.mjs --fresh=3 --seeds=42,2026 --chaos=0.55 --seconds=1200
 ```
 
-Las pruebas usan las herramientas estándar de Node y Python, sin instalar paquetes. Cubren los siete controles ambientales y los nueve rasgos, alimento finito, persecución, herencia y especiación, costos de reproducción, migración de partidas, poderes, pausa, búsqueda espacial, límites de memoria, pestañas ocultas, igualdad entre calidades y contratos de Google/OpenRouter con respuestas simuladas, recorte de fondos, bordes suavizados, conservación de colores del cuerpo y reutilización de imágenes entre descendientes. No consumen créditos ni prueban credenciales reales.
+Las pruebas usan las herramientas estándar de Node y Python, sin instalar paquetes. Cubren los siete controles ambientales y los nueve rasgos, alimento finito, persecución, herencia y especiación, costos de reproducción, migración de partidas, poderes, pausa, búsqueda espacial, límites de memoria, pestañas ocultas, igualdad entre calidades, seguimiento de cámara y contratos de Google/OpenRouter con respuestas simuladas, recorte de fondos, bordes suavizados, conservación de colores del cuerpo y reutilización de imágenes entre descendientes. No consumen créditos ni prueban credenciales reales.
 
-El benchmark compara `origin/main` con la copia de trabajo usando la misma semilla, 12 especies, 1.200 individuos y 690 manchas de algas, en un contexto VM de Node. Mide 40 actualizaciones y descarta las primeras diez; informa mediana y percentil 95. Mide CPU de la simulación, no renderizado ni FPS del navegador. Para medir solo la versión actual: `npm run benchmark -- --optimized-only`.
+El benchmark compara `origin/main` con la copia de trabajo usando la misma semilla, 12 especies, 1.200 individuos y 690 manchas de algas iniciales, en un contexto VM de Node. Mide 140 actualizaciones y descarta las primeras 50 para dar tiempo al calentamiento; informa población final, mediana y percentil 95. Mide CPU de la simulación, no renderizado ni FPS del navegador. Para medir solo la versión actual: `npm run benchmark -- --optimized-only`.
 
 Para comparar contra una revisión concreta, usá `node scripts/benchmark.mjs --compare=a701582`. El mismo ejecutor y generador aleatorio se aplican a ambas versiones. El ejecutor conserva funciones en un ámbito léxico para evitar el costo artificial de resolver cada llamada a través del objeto global de la VM; por eso los tiempos no son comparables con mediciones hechas con el ejecutor anterior.
+
+Para tres rondas alternando el orden de las versiones: `node --expose-gc scripts/benchmark.mjs --compare=v1.4.0 --rounds=3`. Admite de una a cinco rondas; con `--expose-gc` libera los mundos de prueba anteriores entre muestras. Conviene ejecutarlo sin otras pruebas intensivas en paralelo.
 
 `ecology-audit.mjs` sigue tres semillas reproducibles (123456, 42 y 2026), sin variación ambiental aleatoria ni intervenciones, y registra cada minuto poblaciones, recursos, generaciones, linajes, reservas locales y valores finitos. Usa pasos de 1/6 s, el límite de integración ecológica que también se respeta al acelerar a 10×. Podés elegir semillas con `--seeds=42,2026` y una duración con `--seconds=960`. No simula el renderizado ni prueba que el ecosistema permanezca equilibrado indefinidamente.
 
