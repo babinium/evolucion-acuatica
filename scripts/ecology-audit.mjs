@@ -27,6 +27,7 @@ for (const scenario of scenarios) for (const seed of seeds) {
         lineages:state.species.length, species:livingIdentities().size,
         newSpecies:state.species.filter(sp=>sp.evolutionSource).length,
         maxGeneration:Math.max(0,...state.creatures.map(c=>c.generation)),
+        carnivoreGeneration:Math.max(0,...state.creatures.filter(c=>getSpecies(c).class==='carnivore').map(c=>c.generation)),
         nutrients:+(state.habitats.reduce((s,h)=>s+h.stock,0)/16).toFixed(3),
         energy:Math.round(state.creatures.reduce((s,c)=>s+c.energy,0)/Math.max(1,state.creatures.length)),
         finite:state.creatures.every(c=>[c.x,c.y,c.health,c.energy,...Object.values(c.genes)].every(Number.isFinite))};

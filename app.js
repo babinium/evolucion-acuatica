@@ -122,11 +122,9 @@ function rebuildSpatialIndexes() {
     for (const bucket of grid.cells.values()) bucket.length = 0;
   }
   quadrantCounts.clear();
-  preyRenewal.fill(0);huntingPressure.fill(0);
   if (state.habitats) for (const h of state.habitats) h.cover = 0;
   for (const c of state.creatures) {
     const type = getSpecies(c)?.class;
-    if(type)forecastFoodWeb(c,type);
     if (type === "producer" && c.health > 0 && state.habitats) state.habitats[cellIndex(c)].cover += c.size * 0.035;
     if (classGrids[type]) classGrids[type].insert(c);
     if (type && type !== "producer") animalGrid.insert(c);
@@ -417,9 +415,12 @@ function seedWorld(speciesList,{balancedFounders=false}={}) {
       const angle=rand(0,Math.PI*2),distance=type==='carnivore'?rand(350,550):rand(20,80);
       const c=spawnCreature(sp,clamp(food.x+Math.cos(angle)*distance,40,state.worldSize-40),
         clamp(food.y+Math.sin(angle)*distance,40,state.worldSize-40),0,balancedFounders?balancedFounderGenes(sp):initialGenes(sp));
-      // Mixed, well-fed founders; offspring still receive only energy paid by a parent.
+      // Mixed, well-fed founders; animal offspring use the divine birth subsidy.
       c.age=rand(0,bodyOf(c).lifespan*0.2);
       c.energy=c.maxEnergy*rand(0.8,0.95);c.hungry=false;
+      // Founders represent different points in their fertility cycle. Their
+      // descendants always wait a complete interval before their first brood.
+      if(type!=='producer')c.cooldown=rand(bodyOf(c).birthWait*0.25,bodyOf(c).birthWait);
       if(type==='herbivore')grazers.push(c);
     }
   }
@@ -466,6 +467,7 @@ function spawnCreature(species, x, y, generation, genes = species.traits) {
     vx: 0, vy: 0, genes: sanitizeGenes(genes, species.class),
     age: rand(18, 40), generation: generation || species.generation,
     state: "explorando", targetId: null, cooldown: rand(8, 25), protected: 0,
+    hungry: null, parentCreatureId: null,
     wanderX: null, wanderY: null, wanderTime: 0
   };
   const body = bodyOf(c, species);
@@ -970,7 +972,8 @@ function updateSelection() {
       <p class="hint">${escapeHtml(sp.description)}</p>
       <p class="hint lineage-status">${escapeHtml(evolutionSummary(sp))}</p>
       ${sp.class === "producer" ? `<p class="hint">Las raíces pueden guardar hasta ${Math.round(bodyOf(c).rootReserve)} de energía fuera del alcance del pastoreo. Esa reserva se gasta al vivir, recuperarse y formar brotes; no evita el hambre ni la vejez.</p>` : ""}
-      <div class="detail-grid">${["Estado", "Generación", "Edad", "Energía", "Salud", "Población", "Oxígeno local", "Nutrientes locales", "Cobertura vegetal", "Gasto basal"].map((label, i) => `<div class="detail"><span>${label}</span><b data-selection="${i}"></b></div>`).join("")}</div>
+      ${sp.class !== "producer" ? `<p class="hint">Ayuda divina: cría con 55% de salud y 75% de energía. Paga 25% de su capacidad; la cría recibe 75% de la suya. La fertilidad marca el intervalo.</p>` : ""}
+      <div class="detail-grid">${["Estado", "Generación", "Edad", "Energía", "Salud", "Población", "Oxígeno local", "Nutrientes locales", "Cobertura vegetal", "Gasto basal",...(sp.class!=='producer'?["Próxima cría","Intervalo de cría"]:[])].map((label, i) => `<div class="detail"><span>${label}</span><b data-selection="${i}"></b></div>`).join("")}</div>
       <p class="hint"><b>Dieta:</b> ${escapeHtml(sp.diet)}</p>
       <p class="hint"><b>Hábitat:</b> ${escapeHtml(sp.habitat)}</p>
       <p class="hint inherited-hint">Rasgos de este individuo · heredados con variaciones. Pasá el cursor para ver ventajas y costos.</p>
@@ -980,6 +983,13 @@ function updateSelection() {
   const water = localWater(c);
   const cover = state.habitats[cellIndex(c)].cover || 0;
   const values = [c.state, c.generation, Math.floor(c.age), `${Math.floor(c.energy)} / ${Math.floor(c.maxEnergy)}`, `${Math.floor(c.health)} / ${Math.floor(c.maxHealth)}`, sp.population, Math.round(water.oxygen), Math.round(water.nutrients), `${Math.round(cover / (cover + 2) * 100)}%`, `${(bodyOf(c).basal * water.temperatureActivity).toFixed(1)} / s`];
+  if(sp.class!=='producer') {
+    const body=bodyOf(c);
+    const next=body.fertility<=0?'Estéril':c.age<body.maturity?'Juvenil':c.cooldown>0?`${Math.ceil(c.cooldown)} s`
+      :c.health<c.maxHealth*ANIMAL_BIRTH_HEALTH?'Espera salud':c.energy<c.maxEnergy*ANIMAL_BIRTH_ENERGY?'Espera energía'
+      :state.creatures.length>=MAX_CREATURES?'Límite de población':'Lista';
+    values.push(next,body.fertility>0?`${Math.round(body.birthWait)} s`:'—');
+  }
   panel.querySelectorAll("[data-selection]").forEach((el, i) => {
     const value = String(values[i]);
     if (el.textContent !== value) el.textContent = value;
