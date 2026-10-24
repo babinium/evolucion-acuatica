@@ -73,7 +73,7 @@ function phenotype(genes, type) {
     // Producers continue paying for the child's reserves and edible tissue.
     birthCost: type !== "producer" ? maxEnergy*ANIMAL_BIRTH_COST : birthEnergy + tissue + 6,
     birthEnergy,
-    birthWait: type === "carnivore" ? 60 + (1 - fertility) * 140 : 20 + (1 - fertility) * 65,
+    birthWait: type === "carnivore" ? 2 * (60 + (1 - fertility) * 140) : 20 + (1 - fertility) * 65,
     maturity: (type === "producer" ? 12 : type === "carnivore" ? 35 : 18) / activity,
     lifespan: (type === "producer" ? 420 : 300) + t.size * 12,
     tissue,
