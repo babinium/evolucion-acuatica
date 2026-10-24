@@ -63,7 +63,7 @@ test('darkness can extinguish a fertile colony and extinction never triggers a r
   assert.equal(result.extinct,0);assert.equal(result.later,0);
 });
 
-test('initial hunters share the prey budget without rewriting genes or imposing a later population ratio',()=>{
+test('initial hunters share the prey budget without rewriting genes or removing existing hunters',()=>{
   const game=createGame();
   const result=game.run(`(()=>{
     const species=fallbackSpecies(1,1,4),genes=JSON.stringify(species.map(sp=>sp.traits));

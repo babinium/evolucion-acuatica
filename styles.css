@@ -969,6 +969,26 @@ h1 em {
   margin-top: 7px;
 }
 
+.selection-death {
+  margin-top: 14px;
+  padding: 12px;
+  color: var(--warn);
+  background: #2c2921;
+  border: 1px solid #6c5734;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.life-status { margin-bottom: 12px; }
+.life-heading { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+.life-heading b { color: var(--accent); }
+.life-meter { height: 6px; margin: 7px 0; border-radius: 4px; overflow: hidden; background: #29444e; }
+.life-meter i { display: block; height: 100%; background: var(--accent); }
+.life-status p { display: grid; gap: 3px; font-size: 9px; line-height: 1.5; color: var(--muted); }
+.life-status[data-stage="Vejez próxima"] .life-heading b { color: var(--warn); }
+.life-status[data-stage="Vejez próxima"] .life-meter i { background: var(--warn); }
+
 #selectionPanel {
   border-top: 1px solid var(--line);
   margin-top: 15px;

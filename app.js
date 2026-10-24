@@ -378,6 +378,7 @@ function seedWorld(speciesList,{balancedFounders=false}={}) {
   selectionKey = null;
   speciesListSignature = "";
   state.selected = null;
+  selectedDeathMessage="";
   state.followSelected = false;
   state.nextCreatureId = 1;
   state.nextSpeciesId = state.species.length + 1;
@@ -968,6 +969,7 @@ function safeImageUrl(value) {
 }
 
 let selectionKey = null;
+let selectedDeathMessage = "";
 function updateSelection() {
   const panel = document.getElementById("selectionPanel");
   const empty = document.getElementById("selectionEmpty");
@@ -978,8 +980,13 @@ function updateSelection() {
     selectionKey = null;
     panel.classList.add("hidden");
     empty.classList.remove("hidden");
+    document.getElementById("selectionDeath").textContent=selectedDeathMessage;
+    document.getElementById("selectionDeath").classList.toggle("hidden",!selectedDeathMessage);
     return;
   }
+  selectedDeathMessage="";
+  document.getElementById("selectionDeath").textContent="";
+  document.getElementById("selectionDeath").classList.add("hidden");
   updateFollowCamera();syncFollowControls();
   const sp = getSpecies(c);
   if (!sp) return;
@@ -996,6 +1003,11 @@ function updateSelection() {
       <button class="text-button selection-back" data-return-species>← Ver todas las especies</button>
       ${image}
       <div class="selection-heading"><span class="selection-avatar" style="color:${escapeHtml(sp.color)}"><svg><use href="#${sp.class === "producer" ? "i-leaf" : "i-fish"}"/></svg></span><div><span class="species-chip">${className(sp.class)} · Individuo #${c.id}</span><h2>${escapeHtml(sp.name)}</h2></div></div>
+      <section id="selectionLife" class="life-status" title="Tiempo natural por edad. El hambre, la caza y el ambiente pueden acortarlo.">
+        <div class="life-heading"><span>Vida restante</span><b id="selectionLifeValue"></b></div>
+        <div id="selectionLifeMeter" class="life-meter" role="meter" aria-label="Vida natural restante" aria-valuemin="0" aria-valuemax="100"><i id="selectionLifeFill"></i></div>
+        <p><span id="selectionLifeStage"></span><span>Por edad; el hambre y los daños pueden acortarla.</span></p>
+      </section>
       <p class="hint">${escapeHtml(sp.description)}</p>
       <p class="hint lineage-status">${escapeHtml(evolutionSummary(sp))}</p>
       ${sp.class === "producer" ? `<p class="hint">Las raíces pueden guardar hasta ${Math.round(bodyOf(c).rootReserve)} de energía fuera del alcance del pastoreo. Esa reserva se gasta al vivir, recuperarse y formar brotes; no evita el hambre ni la vejez.</p>` : ""}
@@ -1007,14 +1019,23 @@ function updateSelection() {
       <div class="trait-list">${traitKeys.map(k => traitBar(k, c.genes[k], sp.class)).join("")}</div>`;
     selectionKey = key;
   }
+  const life=lifeOf(c);
+  document.getElementById("selectionLifeValue").textContent=`${Math.ceil(life.remaining).toLocaleString('es-AR')} s`;
+  document.getElementById("selectionLifeStage").textContent=life.stage;
+  document.getElementById("selectionLifeFill").style.width=`${life.fraction*100}%`;
+  const meter=document.getElementById("selectionLifeMeter");
+  meter.setAttribute('aria-valuenow',String(Math.round(life.fraction*100)));
+  meter.setAttribute('aria-valuetext',`${Math.ceil(life.remaining)} segundos de vida natural restante`);
+  document.getElementById("selectionLife").dataset.stage=life.stage;
   const water = localWater(c);
   const cover = state.habitats[cellIndex(c)].cover || 0;
-  const values = [c.state, c.generation, Math.floor(c.age), `${Math.floor(c.energy)} / ${Math.floor(c.maxEnergy)}`, `${Math.floor(c.health)} / ${Math.floor(c.maxHealth)}`, sp.population, Math.round(water.oxygen), Math.round(water.nutrients), `${Math.round(cover / (cover + 2) * 100)}%`, `${(bodyOf(c).basal * water.temperatureActivity).toFixed(1)} / s`];
+  const values = [c.state, c.generation, `${Math.floor(life.elapsed)} / ${Math.ceil(life.total)} s`, `${Math.floor(c.energy)} / ${Math.floor(c.maxEnergy)}`, `${Math.floor(c.health)} / ${Math.floor(c.maxHealth)}`, sp.population, Math.round(water.oxygen), Math.round(water.nutrients), `${Math.round(cover / (cover + 2) * 100)}%`, `${(bodyOf(c).basal * water.temperatureActivity).toFixed(1)} / s`];
   if(sp.class!=='producer') {
     const body=bodyOf(c);
     const next=body.fertility<=0?'Estéril':c.age<body.maturity?'Juvenil':c.cooldown>0?`${Math.ceil(c.cooldown)} s`
       :c.health<c.maxHealth*ANIMAL_BIRTH_HEALTH?'Espera salud':c.energy<c.maxEnergy*ANIMAL_BIRTH_ENERGY?'Espera energía'
-      :state.creatures.length>=MAX_CREATURES?'Límite de población':'Lista';
+      :state.creatures.length>=MAX_CREATURES?'Límite de población'
+      :sp.class==='carnivore'&&!preySupportsBrood()?'Espera presas':'Lista';
     values.push(next,body.fertility>0?`${Math.round(body.birthWait)} s`:'—');
   }
   panel.querySelectorAll("[data-selection]").forEach((el, i) => {
@@ -1286,6 +1307,7 @@ function loadWorld() {
     const selectedId = saved.selectedId ?? saved.selected?.id;
     const legacy = saved.ecologyVersion !== ECOLOGY_VERSION;
     resetEvolutionWork();
+    selectedDeathMessage="";
     Object.assign(state, saved, { started: true, activeTool: null, followSelected: false,
       envBaseline: {...(saved.envBaseline || saved.envTarget)},
       evolutionAiEnabled: typeof saved.evolutionAiEnabled==="boolean" ? saved.evolutionAiEnabled
