@@ -6,7 +6,7 @@ const context=vm.createContext({console,Map,Set,Date,JSON});
 vm.runInContext(fs.readFileSync('darwin-core.js','utf8')+';globalThis.book=DarwinCore',context);
 const book=context.book;
 const specimen=(name='Fronda',type='producer')=>({name,class:type,visualDescription:'A compact green colony',
-  description:'Una colonia que aprovecha la luz.',traits:{size:4,speed:5,attack:8,defense:3,perception:6,
+  description:'Una colonia que aprovecha la luz.',artworkSource:'ai',traits:{size:4,speed:5,attack:8,defense:3,perception:6,
   fertility:14,metabolism:3,foodEfficiency:7,toxicity:1}});
 const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
 

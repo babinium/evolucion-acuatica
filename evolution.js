@@ -92,7 +92,7 @@ function applyEvolutionIdentity(root, identity) {
 
 function shareEvolutionArtwork(root) {
   for (const sp of identityMembers(root)) if (sp!==root) Object.assign(sp,{
-    portraitUrl:root.portraitUrl,spriteUrl:root.spriteUrl,artworkVersion:root.artworkVersion,artworkError:root.artworkError});
+    portraitUrl:root.portraitUrl,spriteUrl:root.spriteUrl,artworkVersion:root.artworkVersion,artworkSource:root.artworkSource,artworkError:root.artworkError});
   queueBookSpecies(root);
 }
 
@@ -106,7 +106,7 @@ function ensureLocalEvolutionArtwork(root) {
     canvas.getContext("2d").drawImage(source,(size-w)/2,(size-h)/2,w,h);
     return canvas.toDataURL("image/png");
   };
-  root.spriteUrl=make(192);root.portraitUrl=make(384);root.artworkVersion=1;
+  root.spriteUrl=make(192);root.portraitUrl=make(384);root.artworkVersion=1;root.artworkSource="procedural";
   shareEvolutionArtwork(root);
 }
 
@@ -133,7 +133,7 @@ function syncEvolutionControls() {
   input.disabled=!configState.canUseAiText || !configState.canUseAiImages;
   setText("evolutionAiStatus",state.evolutionAiBlocked ? `IA detenida: ${state.evolutionAiBlocked}`
     : state.evolutionAiEnabled ? "Usa saldo solo al surgir una especie nueva; las dos variaciones reutilizan su imagen."
-    : "Nuevas especies con nombres y dibujos locales, sin gasto de API.");
+    : "Nuevas especies con nombres y dibujos locales, sin gasto de API. Se guardan en la partida; el libro conserva solo ilustraciones de IA.");
 }
 
 function processEvolutionQueue() {
