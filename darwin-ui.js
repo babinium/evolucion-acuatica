@@ -7,7 +7,7 @@ const darwinIncluded=DARWIN_STARTER.filter(raw=>raw.artworkSource==='ai').map(ra
 const darwinPersonal=new Map(),darwinPending=new Map(),darwinSignatures=new Map(),darwinChosen=new Set(),darwinUnsavedArt=new Map(),darwinUnsavedKeys=new Set();
 let darwinReady=Promise.resolve(),darwinWrite=Promise.resolve(),darwinTimer=0,darwinError='';
 let darwinPage=0,darwinType='all',darwinView=0,darwinDetailView=0,darwinSelected='',darwinUseSelection=false;
-let darwinReturnFocus=null,darwinWasPaused=false,darwinWasStarted=false;
+let darwinReturnFocus=null,darwinWasPaused=false,darwinWasStarted=false,darwinAdding=false;
 const DARWIN_PAGE_SIZE=24;
 function darwinEntries(){return DarwinCore.merge(darwinIncluded,[...darwinPersonal.values()]);}
 function darwinMessage(message){document.getElementById('bookStatus').textContent=message;}
@@ -95,6 +95,50 @@ async function bookEntriesForWorld(counts){
 }
 function bookFiltered(entries=darwinEntries()){return DarwinCore.filter(entries,{
   query:document.getElementById('bookSearch').value,type:darwinType,source:document.getElementById('bookSource').value});}
+async function addBookSpeciesToWorld(entry){
+  if(darwinAdding)return;
+  if(!state.started || worldStarting || creatingSpecies){darwinMessage('Esperá a que termine de prepararse el mundo o la especie.');return;}
+  const world=state.species,dialog=document.getElementById('darwinBook');
+  darwinAdding=true;
+  const button=document.getElementById('bookChoose');
+  button.disabled=true;button.textContent='Añadiendo…';
+  darwinMessage(`Preparando ${entry.name} con su ilustración del libro…`);
+  try{
+    const art=await bookArtwork(entry);
+    if(!state.started || state.species!==world || !dialog.open)return;
+    if(!art)throw new Error('No se pudo leer la ilustración. Volvé a importar el libro.');
+    const desired=entry.class==='producer'?42:entry.class==='herbivore'?INITIAL_HERBIVORES_PER_SPECIES:INITIAL_CARNIVORES_PER_SPECIES;
+    const count=Math.min(desired,MAX_CREATURES-state.creatures.length);
+    if(count<=0)throw new Error('El mundo alcanzó su límite de población. Esperá a que haya espacio.');
+    let sp=state.species.find(other=>other.bookKey===entry.key && other.variationDepth===0);
+    if(!sp){
+      if(state.species.length>=MAX_EVOLVED_SPECIES)throw new Error('El mundo alcanzó su límite de especies. Podés reforzar una especie que ya esté presente.');
+      sp=normalizeSpecies({...entry,id:uid('sp'),bookKey:entry.key,...art});
+      state.species.push(sp);speciesById.set(sp.id,sp);state.nextSpeciesId++;
+    }else Object.assign(sp,art,{artworkSource:'ai',artworkError:''});
+    sp.extinct=false;
+    const center={x:clamp(state.camera.x,40,state.worldSize-40),y:clamp(state.camera.y,40,state.worldSize-40)};
+    let first=null;
+    for(let i=0;i<count;i++){
+      const angle=rand(0,Math.PI*2),distance=i?rand(25,160):0;
+      const c=spawnCreature(sp,center.x+Math.cos(angle)*distance,center.y+Math.sin(angle)*distance,sp.generation,initialGenes(sp));
+      const body=bodyOf(c);
+      c.age=rand(0,body.lifespan*0.2);c.energy=c.maxEnergy*rand(0.8,0.95);c.hungry=false;
+      if(sp.class!=='producer')c.cooldown=rand(body.birthWait*0.25,body.birthWait);
+      first ||= c;
+    }
+    state.selected=first;state.followSelected=false;selectionKey=null;
+    state.camera.x=first.x;state.camera.y=first.y;
+    rebuildSpatialIndexes();recalcSpecies();
+    state.lastEvent=`Libro de Darwin: ${count} ${count===1?'individuo añadido':'individuos añadidos'} de ${sp.name}.`;
+    updateSpeciesList();updateSelection();updateHud();invalidate();
+    dialog.close();revealSelection();
+  }catch(error){darwinMessage(`No se pudo añadir la especie: ${error.message}`);}
+  finally{
+    darwinAdding=false;
+    if(dialog.open && darwinSelected)showBookDetail(darwinSelected);
+  }
+}
 function renderDarwinBook(){
   const all=darwinEntries(),positions=new Map(all.map((e,i)=>[e.key,i+1]));
   const epoch=++darwinView,entries=bookFiltered(all),pages=Math.max(1,Math.ceil(entries.length/DARWIN_PAGE_SIZE));
@@ -121,10 +165,12 @@ function renderDarwinBook(){
 async function showBookDetail(key){
   const entry=darwinEntries().find(e=>e.key===key);if(!entry)return;
   const epoch=++darwinDetailView;darwinSelected=key;
+  const chosen=!state.started && darwinChosen.has(key);
+  const chooseLabel=state.started?'+ Añadir al mundo':chosen?'Quitar de la selección':'+ Elegir para nuevo mundo';
   document.querySelectorAll('[data-book-key]').forEach(b=>b.classList.toggle('active',b.dataset.bookKey===key));
   const panel=document.getElementById('bookDetail');
   panel.classList.remove('hidden');document.getElementById('bookLayout').classList.add('has-detail');
-  panel.innerHTML=`<div class="book-detail-toolbar"><button class="text-button book-detail-close" id="bookCloseDetail">← Colección</button><button id="bookChoose" class="book-choose ${darwinChosen.has(key)?'selected':''}" ${state.started?'disabled':''}>${darwinChosen.has(key)?'Quitar del mundo':'+ Añadir al mundo'}</button></div>
+  panel.innerHTML=`<div class="book-detail-toolbar"><button class="text-button book-detail-close" id="bookCloseDetail">← Colección</button><button id="bookChoose" class="book-choose ${chosen?'selected':''}" ${darwinAdding || worldStarting || creatingSpecies?'disabled':''}>${darwinAdding?'Añadiendo…':chooseLabel}</button></div>
     <button class="portrait-button book-portrait" data-zoom-portrait aria-label="Ampliar ilustración de ${escapeHtml(entry.name)}"><img id="bookPortrait" class="portrait" alt="${escapeHtml(entry.name)}"/><span class="portrait-zoom">×3</span></button>
     <span class="species-chip ${entry.class}">${escapeHtml(className(entry.class))}</span>
     <h2 id="bookDetailTitle" tabindex="-1">${escapeHtml(entry.name)}</h2><p class="book-description">${escapeHtml(entry.description)}</p>
@@ -133,6 +179,7 @@ async function showBookDetail(key){
     <h3>Rasgos de la especie</h3><div class="trait-list">${traitKeys.map(k=>traitBar(k,entry.traits[k],entry.class)).join('')}</div>`;
   document.getElementById('bookCloseDetail').onclick=closeBookDetail;
   document.getElementById('bookChoose').onclick=()=>{
+    if(state.started){addBookSpeciesToWorld(entry);return;}
     if(darwinChosen.has(key))darwinChosen.delete(key);
     else{
       const count=darwinEntries().filter(e=>e.class===entry.class&&darwinChosen.has(e.key)).length;

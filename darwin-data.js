@@ -23,12 +23,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-03d7839f8b3f6811",
     "bookKey": "darwin-03d7839f8b3f6811",
     "spriteUrl": "assets/darwin/darwin-03d7839f8b3f6811-sprite.png",
     "portraitUrl": "assets/darwin/darwin-03d7839f8b3f6811-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-8f1885786e7046da",
@@ -53,12 +53,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-8f1885786e7046da",
     "bookKey": "darwin-8f1885786e7046da",
     "spriteUrl": "assets/darwin/darwin-8f1885786e7046da-sprite.png",
     "portraitUrl": "assets/darwin/darwin-8f1885786e7046da-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-06f8bb62adf1cf10",
@@ -83,12 +83,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-06f8bb62adf1cf10",
     "bookKey": "darwin-06f8bb62adf1cf10",
     "spriteUrl": "assets/darwin/darwin-06f8bb62adf1cf10-sprite.png",
     "portraitUrl": "assets/darwin/darwin-06f8bb62adf1cf10-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-21bfc39a6448dec2",
@@ -113,12 +113,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-21bfc39a6448dec2",
     "bookKey": "darwin-21bfc39a6448dec2",
     "spriteUrl": "assets/darwin/darwin-21bfc39a6448dec2-sprite.png",
     "portraitUrl": "assets/darwin/darwin-21bfc39a6448dec2-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-e72f2f6ab98173b4",
@@ -143,12 +143,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-e72f2f6ab98173b4",
     "bookKey": "darwin-e72f2f6ab98173b4",
     "spriteUrl": "assets/darwin/darwin-e72f2f6ab98173b4-sprite.png",
     "portraitUrl": "assets/darwin/darwin-e72f2f6ab98173b4-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-98ca1989af3065e7",
@@ -173,12 +173,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-98ca1989af3065e7",
     "bookKey": "darwin-98ca1989af3065e7",
     "spriteUrl": "assets/darwin/darwin-98ca1989af3065e7-sprite.png",
     "portraitUrl": "assets/darwin/darwin-98ca1989af3065e7-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-6d3fc76873e8333e",
@@ -203,12 +203,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-6d3fc76873e8333e",
     "bookKey": "darwin-6d3fc76873e8333e",
     "spriteUrl": "assets/darwin/darwin-6d3fc76873e8333e-sprite.png",
     "portraitUrl": "assets/darwin/darwin-6d3fc76873e8333e-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-b0fdf7a671703b08",
@@ -233,12 +233,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-b0fdf7a671703b08",
     "bookKey": "darwin-b0fdf7a671703b08",
     "spriteUrl": "assets/darwin/darwin-b0fdf7a671703b08-sprite.png",
     "portraitUrl": "assets/darwin/darwin-b0fdf7a671703b08-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-1db6a748e47b7558",
@@ -263,12 +263,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-1db6a748e47b7558",
     "bookKey": "darwin-1db6a748e47b7558",
     "spriteUrl": "assets/darwin/darwin-1db6a748e47b7558-sprite.png",
     "portraitUrl": "assets/darwin/darwin-1db6a748e47b7558-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-e9afbdad003923c3",
@@ -293,12 +293,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-e9afbdad003923c3",
     "bookKey": "darwin-e9afbdad003923c3",
     "spriteUrl": "assets/darwin/darwin-e9afbdad003923c3-sprite.png",
     "portraitUrl": "assets/darwin/darwin-e9afbdad003923c3-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-08113291cae8e117",
@@ -323,12 +323,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-08113291cae8e117",
     "bookKey": "darwin-08113291cae8e117",
     "spriteUrl": "assets/darwin/darwin-08113291cae8e117-sprite.png",
     "portraitUrl": "assets/darwin/darwin-08113291cae8e117-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-7e55228b2ce89dc9",
@@ -353,12 +353,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-7e55228b2ce89dc9",
     "bookKey": "darwin-7e55228b2ce89dc9",
     "spriteUrl": "assets/darwin/darwin-7e55228b2ce89dc9-sprite.png",
     "portraitUrl": "assets/darwin/darwin-7e55228b2ce89dc9-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-873f393fa648743b",
@@ -383,12 +383,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-873f393fa648743b",
     "bookKey": "darwin-873f393fa648743b",
     "spriteUrl": "assets/darwin/darwin-873f393fa648743b-sprite.png",
     "portraitUrl": "assets/darwin/darwin-873f393fa648743b-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-b1cad1907a8af64e",
@@ -413,12 +413,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-b1cad1907a8af64e",
     "bookKey": "darwin-b1cad1907a8af64e",
     "spriteUrl": "assets/darwin/darwin-b1cad1907a8af64e-sprite.png",
     "portraitUrl": "assets/darwin/darwin-b1cad1907a8af64e-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-c4fe3afd813c8537",
@@ -443,12 +443,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-c4fe3afd813c8537",
     "bookKey": "darwin-c4fe3afd813c8537",
     "spriteUrl": "assets/darwin/darwin-c4fe3afd813c8537-sprite.png",
     "portraitUrl": "assets/darwin/darwin-c4fe3afd813c8537-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-9250a1eaa0b7081c",
@@ -473,12 +473,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-9250a1eaa0b7081c",
     "bookKey": "darwin-9250a1eaa0b7081c",
     "spriteUrl": "assets/darwin/darwin-9250a1eaa0b7081c-sprite.png",
     "portraitUrl": "assets/darwin/darwin-9250a1eaa0b7081c-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-0be5fadca61a96cc",
@@ -503,12 +503,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-0be5fadca61a96cc",
     "bookKey": "darwin-0be5fadca61a96cc",
     "spriteUrl": "assets/darwin/darwin-0be5fadca61a96cc-sprite.png",
     "portraitUrl": "assets/darwin/darwin-0be5fadca61a96cc-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-d1c5a9f980bfebd7",
@@ -533,12 +533,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-d1c5a9f980bfebd7",
     "bookKey": "darwin-d1c5a9f980bfebd7",
     "spriteUrl": "assets/darwin/darwin-d1c5a9f980bfebd7-sprite.png",
     "portraitUrl": "assets/darwin/darwin-d1c5a9f980bfebd7-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-9f5f379460cfc338",
@@ -563,12 +563,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-9f5f379460cfc338",
     "bookKey": "darwin-9f5f379460cfc338",
     "spriteUrl": "assets/darwin/darwin-9f5f379460cfc338-sprite.png",
     "portraitUrl": "assets/darwin/darwin-9f5f379460cfc338-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-49b311f7fd1f5641",
@@ -593,12 +593,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-49b311f7fd1f5641",
     "bookKey": "darwin-49b311f7fd1f5641",
     "spriteUrl": "assets/darwin/darwin-49b311f7fd1f5641-sprite.png",
     "portraitUrl": "assets/darwin/darwin-49b311f7fd1f5641-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-43891024f98a874e",
@@ -623,12 +623,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-43891024f98a874e",
     "bookKey": "darwin-43891024f98a874e",
     "spriteUrl": "assets/darwin/darwin-43891024f98a874e-sprite.png",
     "portraitUrl": "assets/darwin/darwin-43891024f98a874e-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-f0cd81ece5c3da90",
@@ -653,12 +653,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-f0cd81ece5c3da90",
     "bookKey": "darwin-f0cd81ece5c3da90",
     "spriteUrl": "assets/darwin/darwin-f0cd81ece5c3da90-sprite.png",
     "portraitUrl": "assets/darwin/darwin-f0cd81ece5c3da90-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-b1bc95e906270db9",
@@ -683,12 +683,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-b1bc95e906270db9",
     "bookKey": "darwin-b1bc95e906270db9",
     "spriteUrl": "assets/darwin/darwin-b1bc95e906270db9-sprite.png",
     "portraitUrl": "assets/darwin/darwin-b1bc95e906270db9-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-4638c3f14fd03a83",
@@ -713,12 +713,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-4638c3f14fd03a83",
     "bookKey": "darwin-4638c3f14fd03a83",
     "spriteUrl": "assets/darwin/darwin-4638c3f14fd03a83-sprite.png",
     "portraitUrl": "assets/darwin/darwin-4638c3f14fd03a83-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-a54c36babb803356",
@@ -743,12 +743,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-a54c36babb803356",
     "bookKey": "darwin-a54c36babb803356",
     "spriteUrl": "assets/darwin/darwin-a54c36babb803356-sprite.png",
     "portraitUrl": "assets/darwin/darwin-a54c36babb803356-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-33926c34dc948f16",
@@ -773,12 +773,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-33926c34dc948f16",
     "bookKey": "darwin-33926c34dc948f16",
     "spriteUrl": "assets/darwin/darwin-33926c34dc948f16-sprite.png",
     "portraitUrl": "assets/darwin/darwin-33926c34dc948f16-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-865bcb4199e324ad",
@@ -803,12 +803,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-865bcb4199e324ad",
     "bookKey": "darwin-865bcb4199e324ad",
     "spriteUrl": "assets/darwin/darwin-865bcb4199e324ad-sprite.png",
     "portraitUrl": "assets/darwin/darwin-865bcb4199e324ad-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-86e61e550ffe1249",
@@ -833,12 +833,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-86e61e550ffe1249",
     "bookKey": "darwin-86e61e550ffe1249",
     "spriteUrl": "assets/darwin/darwin-86e61e550ffe1249-sprite.png",
     "portraitUrl": "assets/darwin/darwin-86e61e550ffe1249-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-085923520547ceb0",
@@ -863,12 +863,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-085923520547ceb0",
     "bookKey": "darwin-085923520547ceb0",
     "spriteUrl": "assets/darwin/darwin-085923520547ceb0-sprite.png",
     "portraitUrl": "assets/darwin/darwin-085923520547ceb0-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-105d1384d8d1ac2c",
@@ -893,12 +893,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-105d1384d8d1ac2c",
     "bookKey": "darwin-105d1384d8d1ac2c",
     "spriteUrl": "assets/darwin/darwin-105d1384d8d1ac2c-sprite.png",
     "portraitUrl": "assets/darwin/darwin-105d1384d8d1ac2c-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-7013e3664b5b17dc",
@@ -923,12 +923,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-7013e3664b5b17dc",
     "bookKey": "darwin-7013e3664b5b17dc",
     "spriteUrl": "assets/darwin/darwin-7013e3664b5b17dc-sprite.png",
     "portraitUrl": "assets/darwin/darwin-7013e3664b5b17dc-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-7d6dba29730ea90d",
@@ -953,12 +953,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-7d6dba29730ea90d",
     "bookKey": "darwin-7d6dba29730ea90d",
     "spriteUrl": "assets/darwin/darwin-7d6dba29730ea90d-sprite.png",
     "portraitUrl": "assets/darwin/darwin-7d6dba29730ea90d-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-9607f7ebf04f2529",
@@ -983,12 +983,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-9607f7ebf04f2529",
     "bookKey": "darwin-9607f7ebf04f2529",
     "spriteUrl": "assets/darwin/darwin-9607f7ebf04f2529-sprite.png",
     "portraitUrl": "assets/darwin/darwin-9607f7ebf04f2529-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-cacf61a89d2d08a4",
@@ -1013,12 +1013,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-cacf61a89d2d08a4",
     "bookKey": "darwin-cacf61a89d2d08a4",
     "spriteUrl": "assets/darwin/darwin-cacf61a89d2d08a4-sprite.png",
     "portraitUrl": "assets/darwin/darwin-cacf61a89d2d08a4-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-df1c0accfadb2232",
@@ -1043,12 +1043,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-df1c0accfadb2232",
     "bookKey": "darwin-df1c0accfadb2232",
     "spriteUrl": "assets/darwin/darwin-df1c0accfadb2232-sprite.png",
     "portraitUrl": "assets/darwin/darwin-df1c0accfadb2232-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-e781a6d335d1e449",
@@ -1073,12 +1073,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-e781a6d335d1e449",
     "bookKey": "darwin-e781a6d335d1e449",
     "spriteUrl": "assets/darwin/darwin-e781a6d335d1e449-sprite.png",
     "portraitUrl": "assets/darwin/darwin-e781a6d335d1e449-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-e7de463d747bd1dd",
@@ -1103,12 +1103,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-e7de463d747bd1dd",
     "bookKey": "darwin-e7de463d747bd1dd",
     "spriteUrl": "assets/darwin/darwin-e7de463d747bd1dd-sprite.png",
     "portraitUrl": "assets/darwin/darwin-e7de463d747bd1dd-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-7a0d72950f3e280d",
@@ -1133,12 +1133,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-7a0d72950f3e280d",
     "bookKey": "darwin-7a0d72950f3e280d",
     "spriteUrl": "assets/darwin/darwin-7a0d72950f3e280d-sprite.png",
     "portraitUrl": "assets/darwin/darwin-7a0d72950f3e280d-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-24f2220ed62b274e",
@@ -1163,12 +1163,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-24f2220ed62b274e",
     "bookKey": "darwin-24f2220ed62b274e",
     "spriteUrl": "assets/darwin/darwin-24f2220ed62b274e-sprite.png",
     "portraitUrl": "assets/darwin/darwin-24f2220ed62b274e-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-a2e25afd1f0f7f87",
@@ -1193,12 +1193,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-a2e25afd1f0f7f87",
     "bookKey": "darwin-a2e25afd1f0f7f87",
     "spriteUrl": "assets/darwin/darwin-a2e25afd1f0f7f87-sprite.png",
     "portraitUrl": "assets/darwin/darwin-a2e25afd1f0f7f87-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-b644d4aacd768dec",
@@ -1223,12 +1223,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-b644d4aacd768dec",
     "bookKey": "darwin-b644d4aacd768dec",
     "spriteUrl": "assets/darwin/darwin-b644d4aacd768dec-sprite.png",
     "portraitUrl": "assets/darwin/darwin-b644d4aacd768dec-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-8e359e79f455cf19",
@@ -1253,12 +1253,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-8e359e79f455cf19",
     "bookKey": "darwin-8e359e79f455cf19",
     "spriteUrl": "assets/darwin/darwin-8e359e79f455cf19-sprite.png",
     "portraitUrl": "assets/darwin/darwin-8e359e79f455cf19-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-f581441d2c24f3f3",
@@ -1283,12 +1283,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-f581441d2c24f3f3",
     "bookKey": "darwin-f581441d2c24f3f3",
     "spriteUrl": "assets/darwin/darwin-f581441d2c24f3f3-sprite.png",
     "portraitUrl": "assets/darwin/darwin-f581441d2c24f3f3-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-72e0c620f7d488c4",
@@ -1313,12 +1313,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-72e0c620f7d488c4",
     "bookKey": "darwin-72e0c620f7d488c4",
     "spriteUrl": "assets/darwin/darwin-72e0c620f7d488c4-sprite.png",
     "portraitUrl": "assets/darwin/darwin-72e0c620f7d488c4-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-2f86f0cb27817f89",
@@ -1343,12 +1343,12 @@ const DARWIN_STARTER = [
     },
     "generation": 1,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-2f86f0cb27817f89",
     "bookKey": "darwin-2f86f0cb27817f89",
     "spriteUrl": "assets/darwin/darwin-2f86f0cb27817f89-sprite.png",
     "portraitUrl": "assets/darwin/darwin-2f86f0cb27817f89-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-00f6e8add161d211",
@@ -1373,12 +1373,12 @@ const DARWIN_STARTER = [
     },
     "generation": 19,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-00f6e8add161d211",
     "bookKey": "darwin-00f6e8add161d211",
     "spriteUrl": "assets/darwin/darwin-00f6e8add161d211-sprite.png",
     "portraitUrl": "assets/darwin/darwin-00f6e8add161d211-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-a8bb3b15984cbd69",
@@ -1403,12 +1403,12 @@ const DARWIN_STARTER = [
     },
     "generation": 20,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-a8bb3b15984cbd69",
     "bookKey": "darwin-a8bb3b15984cbd69",
     "spriteUrl": "assets/darwin/darwin-a8bb3b15984cbd69-sprite.png",
     "portraitUrl": "assets/darwin/darwin-a8bb3b15984cbd69-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-fb0eb0629238a9e2",
@@ -1433,12 +1433,12 @@ const DARWIN_STARTER = [
     },
     "generation": 19,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-fb0eb0629238a9e2",
     "bookKey": "darwin-fb0eb0629238a9e2",
     "spriteUrl": "assets/darwin/darwin-fb0eb0629238a9e2-sprite.png",
     "portraitUrl": "assets/darwin/darwin-fb0eb0629238a9e2-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-135fd024d4b86fe2",
@@ -1463,12 +1463,12 @@ const DARWIN_STARTER = [
     },
     "generation": 18,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-135fd024d4b86fe2",
     "bookKey": "darwin-135fd024d4b86fe2",
     "spriteUrl": "assets/darwin/darwin-135fd024d4b86fe2-sprite.png",
     "portraitUrl": "assets/darwin/darwin-135fd024d4b86fe2-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-e0520d7a5e430e10",
@@ -1493,12 +1493,12 @@ const DARWIN_STARTER = [
     },
     "generation": 17,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-e0520d7a5e430e10",
     "bookKey": "darwin-e0520d7a5e430e10",
     "spriteUrl": "assets/darwin/darwin-e0520d7a5e430e10-sprite.png",
     "portraitUrl": "assets/darwin/darwin-e0520d7a5e430e10-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-8e296bb380cd10ed",
@@ -1523,12 +1523,12 @@ const DARWIN_STARTER = [
     },
     "generation": 21,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-8e296bb380cd10ed",
     "bookKey": "darwin-8e296bb380cd10ed",
     "spriteUrl": "assets/darwin/darwin-8e296bb380cd10ed-sprite.png",
     "portraitUrl": "assets/darwin/darwin-8e296bb380cd10ed-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-2ca4ec5f779a31a3",
@@ -1553,12 +1553,12 @@ const DARWIN_STARTER = [
     },
     "generation": 20,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-2ca4ec5f779a31a3",
     "bookKey": "darwin-2ca4ec5f779a31a3",
     "spriteUrl": "assets/darwin/darwin-2ca4ec5f779a31a3-sprite.png",
     "portraitUrl": "assets/darwin/darwin-2ca4ec5f779a31a3-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-98dc2e77249a2f0b",
@@ -1583,12 +1583,12 @@ const DARWIN_STARTER = [
     },
     "generation": 21,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-98dc2e77249a2f0b",
     "bookKey": "darwin-98dc2e77249a2f0b",
     "spriteUrl": "assets/darwin/darwin-98dc2e77249a2f0b-sprite.png",
     "portraitUrl": "assets/darwin/darwin-98dc2e77249a2f0b-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-1ead28957570e1cd",
@@ -1613,12 +1613,12 @@ const DARWIN_STARTER = [
     },
     "generation": 23,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-1ead28957570e1cd",
     "bookKey": "darwin-1ead28957570e1cd",
     "spriteUrl": "assets/darwin/darwin-1ead28957570e1cd-sprite.png",
     "portraitUrl": "assets/darwin/darwin-1ead28957570e1cd-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-7948c6d39b4b1755",
@@ -1643,12 +1643,12 @@ const DARWIN_STARTER = [
     },
     "generation": 22,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-7948c6d39b4b1755",
     "bookKey": "darwin-7948c6d39b4b1755",
     "spriteUrl": "assets/darwin/darwin-7948c6d39b4b1755-sprite.png",
     "portraitUrl": "assets/darwin/darwin-7948c6d39b4b1755-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-76b097093ad483cf",
@@ -1673,12 +1673,12 @@ const DARWIN_STARTER = [
     },
     "generation": 21,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-76b097093ad483cf",
     "bookKey": "darwin-76b097093ad483cf",
     "spriteUrl": "assets/darwin/darwin-76b097093ad483cf-sprite.png",
     "portraitUrl": "assets/darwin/darwin-76b097093ad483cf-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-11566c5008b28042",
@@ -1703,12 +1703,12 @@ const DARWIN_STARTER = [
     },
     "generation": 21,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-11566c5008b28042",
     "bookKey": "darwin-11566c5008b28042",
     "spriteUrl": "assets/darwin/darwin-11566c5008b28042-sprite.png",
     "portraitUrl": "assets/darwin/darwin-11566c5008b28042-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-f55c0058dd8f34f4",
@@ -1733,12 +1733,12 @@ const DARWIN_STARTER = [
     },
     "generation": 22,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-f55c0058dd8f34f4",
     "bookKey": "darwin-f55c0058dd8f34f4",
     "spriteUrl": "assets/darwin/darwin-f55c0058dd8f34f4-sprite.png",
     "portraitUrl": "assets/darwin/darwin-f55c0058dd8f34f4-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-158e43d8ee45a904",
@@ -1763,12 +1763,12 @@ const DARWIN_STARTER = [
     },
     "generation": 23,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-158e43d8ee45a904",
     "bookKey": "darwin-158e43d8ee45a904",
     "spriteUrl": "assets/darwin/darwin-158e43d8ee45a904-sprite.png",
     "portraitUrl": "assets/darwin/darwin-158e43d8ee45a904-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-7c04b66b8720c03b",
@@ -1793,12 +1793,12 @@ const DARWIN_STARTER = [
     },
     "generation": 22,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-7c04b66b8720c03b",
     "bookKey": "darwin-7c04b66b8720c03b",
     "spriteUrl": "assets/darwin/darwin-7c04b66b8720c03b-sprite.png",
     "portraitUrl": "assets/darwin/darwin-7c04b66b8720c03b-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-6189c9bd24d1b1e3",
@@ -1823,12 +1823,12 @@ const DARWIN_STARTER = [
     },
     "generation": 20,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-6189c9bd24d1b1e3",
     "bookKey": "darwin-6189c9bd24d1b1e3",
     "spriteUrl": "assets/darwin/darwin-6189c9bd24d1b1e3-sprite.png",
     "portraitUrl": "assets/darwin/darwin-6189c9bd24d1b1e3-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-964dc5db1600bcbd",
@@ -1853,12 +1853,12 @@ const DARWIN_STARTER = [
     },
     "generation": 22,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-964dc5db1600bcbd",
     "bookKey": "darwin-964dc5db1600bcbd",
     "spriteUrl": "assets/darwin/darwin-964dc5db1600bcbd-sprite.png",
     "portraitUrl": "assets/darwin/darwin-964dc5db1600bcbd-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-81ea1426768df280",
@@ -1883,12 +1883,12 @@ const DARWIN_STARTER = [
     },
     "generation": 22,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-81ea1426768df280",
     "bookKey": "darwin-81ea1426768df280",
     "spriteUrl": "assets/darwin/darwin-81ea1426768df280-sprite.png",
     "portraitUrl": "assets/darwin/darwin-81ea1426768df280-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-8888f79555cf07c9",
@@ -1913,12 +1913,12 @@ const DARWIN_STARTER = [
     },
     "generation": 23,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-8888f79555cf07c9",
     "bookKey": "darwin-8888f79555cf07c9",
     "spriteUrl": "assets/darwin/darwin-8888f79555cf07c9-sprite.png",
     "portraitUrl": "assets/darwin/darwin-8888f79555cf07c9-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   },
   {
     "key": "darwin-364fd2021078a7ce",
@@ -1943,11 +1943,11 @@ const DARWIN_STARTER = [
     },
     "generation": 21,
     "artworkSource": "ai",
-    "discoveredAt": 0,
     "id": "darwin-364fd2021078a7ce",
     "bookKey": "darwin-364fd2021078a7ce",
     "spriteUrl": "assets/darwin/darwin-364fd2021078a7ce-sprite.png",
     "portraitUrl": "assets/darwin/darwin-364fd2021078a7ce-portrait.png",
-    "artworkVersion": 1
+    "artworkVersion": 1,
+    "discoveredAt": 0
   }
 ];
