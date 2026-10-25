@@ -5,10 +5,16 @@ import vm from 'node:vm';
 import {createGame} from './harness.mjs';
 
 const ctx=vm.createContext({});vm.runInContext(fs.readFileSync('darwin-data.js','utf8')+';globalThis.starter=DARWIN_STARTER',ctx);
+const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
+function seedIllustrated(g,counts=[1,1,1]){
+ g.run(`seedWorld(fallbackSpecies(${counts.join(',')}).map(sp=>({...sp,artworkSource:'ai',artworkVersion:1,
+   spriteUrl:${JSON.stringify(png)},portraitUrl:${JSON.stringify(png)}})))`);
+}
 
 test('the shipped collection contains at least four illustrated species of each diet with bounded local PNGs',()=>{
- const entries=ctx.starter;assert.ok(entries.length>=47);let bytes=0;
+ const entries=ctx.starter;assert.ok(entries.length>=65);let bytes=0;
  assert.equal(new Set(entries.map(e=>e.bookKey)).size,entries.length);
+ assert.ok(entries.every(e=>e.artworkSource==='ai'));
  for(const type of ['producer','herbivore','carnivore'])assert.ok(entries.filter(e=>e.class===type).length>=4);
  for(const e of entries)for(const [field,size] of [['spriteUrl',192],['portraitUrl',384]]){
   assert.match(e[field],/^assets\/darwin\/darwin-[a-f0-9]{16}-(sprite|portrait)\.png$/);
@@ -30,8 +36,9 @@ test('a new installation can start an illustrated world from the book without ge
  assert.equal(g.run('state.evolutionAiEnabled'),false);
 });
 
-test('old saved species migrate before playing without rewriting or loading the saved world',async()=>{
- const saved=JSON.stringify({species:[{name:'Recuerdo antiguo',class:'producer',traits:{size:4},visualDescription:'green',variationDepth:0}]});
+test('saved illustrated species register before playing without rewriting or loading the saved world',async()=>{
+ const saved=JSON.stringify({species:[{name:'Recuerdo antiguo',class:'producer',traits:{size:4},visualDescription:'green',variationDepth:0,
+   artworkVersion:1,artworkSource:'ai',spriteUrl:png,portraitUrl:png}]});
  const storage=new Map([['evo-save',saved]]),g=createGame({storage});
  await g.run('darwinReady');await g.run('flushDarwinBook()');
  assert.equal(storage.get('evo-save'),saved);assert.equal(g.run('state.started'),false);
@@ -39,18 +46,18 @@ test('old saved species migrate before playing without rewriting or loading the 
 });
 
 test('discoveries survive another world and repeated captures do not keep writing identical records',async()=>{
- const g=createGame();g.run('seedWorld(fallbackSpecies(1,1,1))');await g.run('flushDarwinBook()');
+ const g=createGame();seedIllustrated(g);await g.run('flushDarwinBook()');
  const first=g.run('[...darwinPersonal.keys()]');
  g.run(`window.bookWrites=0;const originalWrite=darwinVault.write.bind(darwinVault);
   darwinVault.write=(...args)=>{window.bookWrites++;return originalWrite(...args);};
   for(const sp of state.species)queueBookSpecies(sp)`);
  await g.run('flushDarwinBook()');assert.equal(g.run('window.bookWrites'),0);
- g.run('seedWorld(fallbackSpecies(2,2,1))');await g.run('flushDarwinBook()');
+ seedIllustrated(g,[2,2,1]);await g.run('flushDarwinBook()');
  assert.ok(first.every(key=>g.run(`darwinPersonal.has('${key}')`)));
  g.run('state.creatures=[];recalcSpecies()');assert.ok(first.every(key=>g.run(`darwinPersonal.has('${key}')`)));
 });
 
-test('a third variation becomes a distinct book identity and its final AI name updates that same entry',async()=>{
+test('a third variation enters the book only after its AI illustration and keeps its key when renamed',async()=>{
  const g=createGame();
  g.run(`seedWorld(fallbackSpecies(1,1,1));state.evolutionAiEnabled=true;
   window.branch=state.species.find(sp=>sp.class==='herbivore');window.originalKey=window.branch.bookKey;
@@ -58,7 +65,10 @@ test('a third variation becomes a distinct book identity and its final AI name u
   window.branch=maybeMutateSpecies(window.branch,{generation:i+1},genes);}`);
  assert.equal(g.run('window.branch.variationDepth'),0);assert.notEqual(g.run('window.branch.bookKey'),g.run('window.originalKey'));
  await g.run('flushDarwinBook()');const key=g.run('window.branch.bookKey');
- g.run(`applyEvolutionIdentity(window.branch,{name:'Identidad definitiva',description:'Nueva especie',visualDescription:'New dorsal body'})`);
+ assert.equal(g.run(`darwinPersonal.has('${key}')`),false);
+ g.run(`applyEvolutionIdentity(window.branch,{name:'Identidad definitiva',description:'Nueva especie',visualDescription:'New dorsal body'});
+   Object.assign(window.branch,{artworkSource:'ai',artworkVersion:1,spriteUrl:${JSON.stringify(png)},portraitUrl:${JSON.stringify(png)}});
+   shareEvolutionArtwork(window.branch);`);
  await g.run('flushDarwinBook()');
  assert.equal(g.run(`darwinPersonal.get('${key}').name`),'Identidad definitiva');
  assert.equal(g.run(`darwinEntries().filter(e=>e.key==='${key}').length`),1);
@@ -74,7 +84,7 @@ test('opening the book suspends simulation steps, shortcuts and pending paid ide
 
 test('a full browser disk leaves the game alive and the failed discovery exportable in this session',async()=>{
  const g=createGame();await g.run('darwinReady');
- g.run(`darwinVault.write=async()=>{throw new Error('quota')};seedWorld(fallbackSpecies(1,1,1))`);
+ g.run(`darwinVault.write=async()=>{throw new Error('quota')}`);seedIllustrated(g);
  await g.run('flushDarwinBook()');
  assert.equal(g.run('state.started'),true);assert.equal(g.run('darwinPersonal.size'),3);
  assert.ok(g.run('darwinUnsavedArt.size')>0);assert.match(g.element('bookStatus').textContent,/export/);
@@ -90,7 +100,7 @@ test('a blocked archive stays explicitly temporary even if the database later op
 });
 
 test('a quota error while updating a discovery keeps the newer name when re-reading stored entries',async()=>{
- const g=createGame();g.run('seedWorld(fallbackSpecies(1,1,1))');await g.run('flushDarwinBook()');
+ const g=createGame();seedIllustrated(g);await g.run('flushDarwinBook()');
  g.run(`window.remembered=state.species[0];darwinVault.write=async()=>{throw new Error('quota')};
   window.remembered.name='Nombre que aún no pudo guardarse';queueBookSpecies(window.remembered)`);
  await g.run('flushDarwinBook()');await g.run('readDarwinRecords()');

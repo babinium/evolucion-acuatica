@@ -47,4 +47,24 @@ class DarwinVault {
       for(const e of entries)tx.objectStore('species').put(e);
     });
   }
+  async removeUnillustrated(keys){
+    if(!keys.length)return;
+    const unwanted=new Set(keys),db=await this.ready;
+    const remove=(entries,dropEntry,dropArt)=>{
+      const discarded=e=>unwanted.has(e.key)&&e.artworkSource!=='ai';
+      const kept=entries.filter(e=>!discarded(e)),used=new Set(kept.map(e=>e.artworkKey));
+      for(const e of entries)if(discarded(e)){
+        dropEntry(e.key);if(e.artworkKey&&!used.has(e.artworkKey))dropArt(e.artworkKey);
+      }
+      return kept;
+    };
+    if(!db)return remove([...this.memoryEntries.values()],k=>this.memoryEntries.delete(k),k=>this.memoryArt.delete(k));
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(['species','artwork'],'readwrite'),species=tx.objectStore('species');let kept;
+      const timer=setTimeout(()=>{reject(new Error('El almacenamiento no responde.'));try{tx.abort();}catch{}},4000);
+      tx.oncomplete=()=>{clearTimeout(timer);resolve(kept);};tx.onabort=()=>{clearTimeout(timer);reject(tx.error||new Error('No se pudo actualizar el libro.'));};tx.onerror=()=>{};
+      const request=species.getAll();request.onsuccess=()=>{kept=remove(request.result,
+        k=>species.delete(k),k=>tx.objectStore('artwork').delete(k));};
+    });
+  }
 }

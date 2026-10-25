@@ -296,6 +296,7 @@ function normalizeSpecies(raw = {}) {
     portraitUrl: raw.portraitUrl || "",
     spriteUrl: raw.spriteUrl || "",
     artworkVersion: raw.artworkVersion === 1 ? 1 : 0,
+    artworkSource: raw.artworkSource==='ai'?'ai':raw.artworkSource==='procedural'?'procedural':'unknown',
     artworkError: String(raw.artworkError || "").slice(0, 800),
     color: raw.color || colorFor(rawClass, traits),
     population: 0,
@@ -558,7 +559,8 @@ async function addSpeciesArtwork(species, statusEl, {background=false} = {}) {
   // Assign only after both local assets decode and pass the cutout checks.
   // A bad image never triggers a second paid generation from the client.
   const artwork = await prepareSpeciesArtwork(data.image,species.class);
-  Object.assign(species, artwork, { artworkVersion: 1, artworkError: "" });
+  Object.assign(species, artwork, { artworkVersion: 1, artworkSource: "ai", artworkError: "" });
+  queueBookSpecies(species);
 }
 
 function getSpecies(creature) {

@@ -666,7 +666,7 @@ function maybeMutateSpecies(sp, parent, genes = inheritGenes(parent, sp)) {
     visualDescription:identity?.visualDescription || sp.visualDescription,
     spritePrompt:identity?.visualDescription || sp.spritePrompt,
     portraitUrl:identity ? "" : sp.portraitUrl,spriteUrl:identity ? "" : sp.spriteUrl,
-    artworkVersion:identity ? 0 : sp.artworkVersion,artworkError:"",evolutionError:"",
+    artworkVersion:identity ? 0 : sp.artworkVersion,artworkSource:identity ? "unknown" : sp.artworkSource,artworkError:"",evolutionError:"",
     evolutionSource:identity ? {identityId:sp.identityId,name:sp.lineageName,description:sp.description,
       visualDescription:sp.visualDescription,traits:{...sp.traits}} : null,
     evolutionTextStatus:identity ? (state.evolutionAiEnabled ? "pending" : "local") : "none",

@@ -1,6 +1,6 @@
 const darwinVault=new DarwinVault();
 const darwinIncludedArt=new Map();
-const darwinIncluded=DARWIN_STARTER.map(raw=>{
+const darwinIncluded=DARWIN_STARTER.filter(raw=>raw.artworkSource==='ai').map(raw=>{
   const art=DarwinCore.artwork(raw);if(art)darwinIncludedArt.set(art.key,art);
   return {...DarwinCore.record(raw,{now:0}),artworkKey:art?.key||''};
 });
@@ -17,21 +17,17 @@ function updateBookCount(){
   document.getElementById('bookSummary').textContent=`${n} especies · ${darwinIncluded.length} incluidas · ${darwinPersonal.size} registradas en este navegador`;
 }
 function queueBookSpecies(sp){
-  if(!sp || Number(sp.variationDepth)>0)return;
+  if(!sp || Number(sp.variationDepth)>0 || sp.artworkSource!=='ai')return;
   try{
+    const art=DarwinCore.artwork(sp);
+    if(!art)return;
     sp.bookKey ||= DarwinCore.keyFor(sp);
-    const record=DarwinCore.record(sp),art=DarwinCore.artwork(sp);
+    const record=DarwinCore.record(sp);
     const signature=JSON.stringify({...record,discoveredAt:0,artworkKey:art?.key||''});
     if(darwinSignatures.get(record.key)===signature)return;
     darwinPending.set(record.key,{record,art,signature});
     if(!darwinTimer)darwinTimer=setTimeout(()=>{darwinTimer=0;flushDarwinBook();},0);
   }catch{darwinError='Una especie no pudo añadirse al libro.';}
-}
-function localBookArtwork(entry){
-  const sp={...entry,id:entry.key,color:colorFor(entry.class,entry.traits)};
-  const urls={spriteUrl:getProceduralSprite(sp,192).toDataURL('image/png'),portraitUrl:getProceduralSprite(sp,384).toDataURL('image/png')};
-  proceduralSprites.delete(entry.key+':192');proceduralSprites.delete(entry.key+':384');
-  return DarwinCore.artwork(urls);
 }
 async function flushDarwinBook(){
   await darwinReady;
@@ -41,18 +37,18 @@ async function flushDarwinBook(){
     const entries=[],assets=[];
     for(const item of pending){
       const old=darwinPersonal.get(item.record.key);
-      const included=darwinIncluded.find(e=>e.key===item.record.key);
-      const art=item.art || (!old?.artworkKey&&!included?.artworkKey?localBookArtwork(item.record):null);
+      const art=item.art;
       const entry={...item.record,discoveredAt:old?.discoveredAt || item.record.discoveredAt,
-        artworkKey:art?.key || old?.artworkKey || included?.artworkKey || ''};
+        artworkKey:art.key};
       entries.push(entry);if(art&&!darwinIncludedArt.has(art.key))assets.push(art);
     }
+    if(!entries.length)return;
     // One atomic write: a saved entry never points to a half-written image.
     try {
       await darwinVault.write(entries,assets);
       for(const a of assets)darwinUnsavedArt.delete(a.key);
       for(const e of entries)darwinUnsavedKeys.delete(e.key);
-      for(const item of pending)darwinSignatures.set(item.record.key,item.signature);
+      for(const item of pending)if(item.record.artworkSource==='ai')darwinSignatures.set(item.record.key,item.signature);
       if(!darwinUnsavedKeys.size)darwinError='';
     } catch {
       // Keep this session's new illustrations exportable when disk quota fails.
@@ -71,8 +67,16 @@ async function bookArtwork(entry){
   catch{return null;}
 }
 async function readDarwinRecords(){
+  const discarded=[];
   for(const raw of await darwinVault.list()){
+    if(raw.artworkSource!=='ai'){
+      discarded.push(raw.key);darwinPersonal.delete(raw.key);darwinSignatures.delete(raw.key);darwinChosen.delete(raw.key);continue;
+    }
     try{const e=DarwinCore.record({...raw,bookKey:raw.key});if(e&&!darwinUnsavedKeys.has(e.key))darwinPersonal.set(e.key,e);}catch{}
+  }
+  const remaining=await darwinVault.removeUnillustrated(discarded);
+  for(const raw of remaining||[])if(raw.artworkSource==='ai'&&!darwinUnsavedKeys.has(raw.key)){
+    const e=DarwinCore.record({...raw,bookKey:raw.key});if(e)darwinPersonal.set(e.key,e);
   }
 }
 async function bookEntriesForWorld(counts){
@@ -110,7 +114,7 @@ function renderDarwinBook(){
   for(const entry of page)bookArtwork(entry).then(art=>{
     if(epoch!==darwinView)return;
     const img=grid.querySelector(`[data-book-image="${entry.key}"]`);
-    if(img){img.src=art?.portraitUrl || localBookArtwork(entry)?.portraitUrl || '';img.onerror=()=>img.classList.add('hidden');}
+    if(img){img.src=art?.portraitUrl || '';img.onerror=()=>img.classList.add('hidden');}
   }).catch(()=>{});
   syncBookSelection();
 }
@@ -140,7 +144,7 @@ async function showBookDetail(key){
   panel.querySelector('[data-zoom-portrait]').onclick=event=>openPortrait(event.currentTarget);
   document.getElementById('bookDetailTitle').focus({preventScroll:true});
   const art=await bookArtwork(entry);
-  if(epoch===darwinDetailView)document.getElementById('bookPortrait').src=art?.portraitUrl || localBookArtwork(entry)?.portraitUrl || '';
+  if(epoch===darwinDetailView)document.getElementById('bookPortrait').src=art?.portraitUrl || '';
 }
 function closeBookDetail(){
   ++darwinDetailView;document.getElementById('bookDetail').classList.add('hidden');
@@ -174,7 +178,7 @@ async function openDarwinBook(button){
   await flushDarwinBook();
   if(!dialog.open)return;
   updateBookCount();renderDarwinBook();
-  darwinMessage(darwinError || (darwinVault.persistent?'Los descubrimientos se guardan aquí, incluso si su especie se extingue.':'El navegador no permite guardar el libro de forma permanente. Exportalo para conservarlo.'));
+  darwinMessage(darwinError || (darwinVault.persistent?'Se conservan especies con ilustración de IA terminada, aunque se extingan. Los dibujos genéricos quedan solo en la partida.':'El navegador no permite guardar el libro de forma permanente. Exportalo para conservarlo.'));
 }
 async function exportDarwinBook(){
   const button=document.getElementById('bookExport');button.disabled=true;darwinMessage('Preparando el libro y sus ilustraciones…');
@@ -207,13 +211,17 @@ async function importDarwinBook(file){
     if(file.size>32*1024*1024)throw new Error('El archivo supera los 32 MB.');
     const imported=DarwinCore.importData(JSON.parse(await file.text()));
     await darwinReady;await flushDarwinBook();
-    const entries=imported.entries.map(e=>{
+    const qualified=[],artByKey=new Map(imported.artworks.map(a=>[a.key,a]));
+    for(const e of imported.entries)if(e.artworkSource==='ai'&&artByKey.has(e.artworkKey))qualified.push(e);
+    const entries=qualified.map(e=>{
       const old=darwinPersonal.get(e.key);
       return {...e,artworkKey:e.artworkKey || old?.artworkKey || '',discoveredAt:old?.discoveredAt?Math.min(old.discoveredAt,e.discoveredAt):e.discoveredAt};
     });
-    await darwinVault.write(entries,imported.artworks);
+    const used=new Set(entries.map(e=>e.artworkKey));
+    if(entries.length)await darwinVault.write(entries,imported.artworks.filter(a=>used.has(a.key)));
     for(const e of entries)darwinPersonal.set(e.key,e);
-    updateBookCount();darwinPage=0;renderDarwinBook();darwinMessage(`${entries.length} especies incorporadas al libro. Tu partida no cambió.`);
+    const omitted=imported.entries.length-entries.length;
+    updateBookCount();darwinPage=0;renderDarwinBook();darwinMessage(`${entries.length} especies incorporadas al libro.${omitted?` ${omitted} omitidas por tener dibujo genérico o carecer de ilustración de IA.`:''} Tu partida no cambió.`);
   }catch(error){darwinMessage('No se pudo importar: '+error.message);}
   finally{document.getElementById('bookFile').value='';document.getElementById('bookImport').disabled=false;}
 }

@@ -15,8 +15,10 @@ try{
   const stat=fs.statSync(input);if(stat.size>32*1024*1024)throw new Error('El libro supera los 32 MB.');
   const {entries,artworks}=core.importData(JSON.parse(fs.readFileSync(input,'utf8')));
   const assets=new Map(artworks.map(a=>[a.key,a])),merged=new Map(included.map(e=>[e.bookKey,e]));
-  const writes=[];
+  const writes=[];let skipped=0;
   for(const entry of entries){
+    if(entry.artworkSource==='procedural'){skipped++;continue;}
+    if(entry.artworkSource!=='ai')throw new Error(`La ilustración de ${entry.name} no tiene origen verificado. Solo se incorporan especies con imagen de IA terminada.`);
     const art=assets.get(entry.artworkKey);
     if(!art)throw new Error(`Falta la ilustración de ${entry.name}.`);
     const urls={};
@@ -34,5 +36,5 @@ try{
     const target=path.join(root,'darwin-data.js'),temp=target+'.tmp';
     fs.writeFileSync(temp,'// Included species and prepared local artwork. No API or browser storage required.\nconst DARWIN_STARTER = '+JSON.stringify([...merged.values()],null,2)+';\n');fs.renameSync(temp,target);
   }
-  console.log(`${entries.length} especies verificadas. Colección resultante: ${merged.size}. ${process.argv.includes('--check')?'Sin modificar archivos.':'Revisá los cambios con git diff antes de publicarlos.'}`);
+  console.log(`${entries.length-skipped} especies ilustradas verificadas; ${skipped} genéricas omitidas. Colección resultante: ${merged.size}. ${process.argv.includes('--check')?'Sin modificar archivos.':'Revisá los cambios con git diff antes de publicarlos.'}`);
 }catch(error){console.error('No se pudo incorporar el libro: '+error.message);process.exit(1);}

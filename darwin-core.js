@@ -27,6 +27,7 @@ const DarwinCore = (() => {
       diet:text(raw.diet,500),habitat:text(raw.habitat,500),behavior:text(raw.behavior,500),
       ancestor:text(raw.evolutionSource?.name || raw.ancestor,70),traits:genes,
       generation:Math.max(1,Math.min(999999,Math.round(Number(raw.generation)||1))),
+      artworkSource:raw.artworkSource==='ai'?'ai':raw.artworkSource==='procedural'?'procedural':'unknown',
       discoveredAt:Math.max(0,Number.isFinite(raw.discoveredAt)?raw.discoveredAt:now),
       artworkKey:/^art-[a-f0-9]{16}$/.test(raw.artworkKey)?raw.artworkKey:''};
   }
@@ -64,8 +65,9 @@ const DarwinCore = (() => {
   }
   function exportData(entries,assets) {
     const used=new Map();
-    const species=entries.map(raw=>{
+    const species=entries.filter(raw=>raw.artworkSource==='ai').map(raw=>{
       const e=record({...raw,bookKey:raw.key});
+      if(!e.artworkKey)throw new Error('Falta una ilustración del libro.');
       if(e.artworkKey){const a=artwork(assets.get(e.artworkKey));if(!a)throw new Error('Falta una ilustración del libro.');used.set(a.key,a);e.artworkKey=a.key;}
       return e;
     });
